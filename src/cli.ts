@@ -4,7 +4,7 @@ import { DEFAULT_MAX_STEPS, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type Reason
 
 export type CliCommand =
   | {
-      mode: "run" | "plan";
+      mode: "run";
       goal: string;
       cwd: string;
       maxSteps: number;
@@ -35,13 +35,12 @@ solarcido
 Usage:
   solarcido
   solarcido run "your goal" [--cwd .] [--max-steps 10] [--reasoning low|medium|high] [--model name]
-  solarcido plan "your goal" [--reasoning low|medium|high] [--model name]
 
 Options:
   --cwd <path>           working directory
-  --max-steps <number>   executor step limit
+  --max-steps <number>   assistant step limit
   --reasoning <level>    low | medium | high
-  --model <name>         model to use for planner/executor/reviewer
+  --model <name>         model to use for the coding assistant
 
 Interactive shell:
   /                      show slash commands
@@ -67,7 +66,7 @@ export function parseCliArgs(argv: string[]): CliCommand {
     return { mode: "help" };
   }
 
-  if (mode !== "run" && mode !== "plan") {
+  if (mode !== "run") {
     throw new Error(`Unknown command: ${mode}`);
   }
 

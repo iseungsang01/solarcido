@@ -3,7 +3,7 @@ import { stdin as input, stdout as output } from "node:process";
 
 import { printHelp } from "./cli.js";
 import { DEFAULT_MODEL, type ReasoningEffort } from "./solar/constants.js";
-import { printPlanOnly, runWorkflow } from "./workflow/run-agent-loop.js";
+import { runWorkflow } from "./workflow/run-agent-loop.js";
 
 export type InteractiveOptions = {
   cwd: string;
@@ -72,8 +72,8 @@ function printLogo(): void {
 
 function printShellHeader(options: InteractiveOptions): void {
   printLogo();
-  printPanel("SOLARCIDO CHAT", [
-    "Ask for code changes, repo analysis, planning, or execution.",
+  printPanel("SOLARCIDO CODE", [
+    "Ask for code changes, repo analysis, or execution.",
     "Start a line with / to open command actions.",
     "",
     `model      ${options.model}`,
@@ -87,7 +87,6 @@ function printShellHeader(options: InteractiveOptions): void {
 function printSlashCommands(options: InteractiveOptions): void {
   printPanel("SLASH COMMANDS", [
     "/help                 show CLI help",
-    "/plan <goal>          create a plan only",
     "/run <goal>           run the workflow explicitly",
     "/model                show current model",
     "/model <name>         change model for this session",
@@ -114,7 +113,7 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
 
   try {
     while (true) {
-      const raw = await rl.question(`${ANSI.amber}${ANSI.bold}chat${ANSI.reset} ${ANSI.slate}❯${ANSI.reset} `);
+      const raw = await rl.question(`${ANSI.amber}${ANSI.bold}code${ANSI.reset} ${ANSI.slate}❯${ANSI.reset} `);
       const command = raw.trim();
 
       if (!command) {
@@ -166,24 +165,6 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
 
         session.model = nextModel;
         console.log(`model updated: ${session.model}`);
-        continue;
-      }
-
-      if (command.startsWith("/plan ")) {
-        const goal = command.slice(6).trim();
-
-        if (!goal) {
-          console.log("Usage: /plan <goal>");
-          continue;
-        }
-
-        await printPlanOnly({
-          goal,
-          cwd: session.cwd,
-          maxSteps: session.maxSteps,
-          reasoningEffort: session.reasoningEffort,
-          model: session.model,
-        });
         continue;
       }
 
