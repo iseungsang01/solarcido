@@ -1,0 +1,23 @@
+{
+  "name": "solarcido",
+  "version": "0.1.0",
+  "private": true,
+  "description": "solarcido CLI built on Upstage solar-pro3-260323",
+  "type": "module",
+  "bin": {
+    "solarcido": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "openai": "^4.104.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
