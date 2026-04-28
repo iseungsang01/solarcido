@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-import { SOLAR_MODEL, UPSTAGE_BASE_URL, type ReasoningEffort } from "./constants.js";
+import { DEFAULT_MODEL, UPSTAGE_BASE_URL, type ReasoningEffort } from "./constants.js";
 
 export type SolarClientOptions = {
   apiKey?: string;
@@ -26,6 +26,7 @@ export type ChatRunOptions = {
   responseFormat?: OpenAI.Chat.Completions.ChatCompletionCreateParams["response_format"];
   reasoningEffort?: ReasoningEffort;
   temperature?: number;
+  model?: string;
 };
 
 export async function runSolarChat(
@@ -33,13 +34,12 @@ export async function runSolarChat(
   options: ChatRunOptions,
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   return client.chat.completions.create({
-    model: SOLAR_MODEL,
+    model: options.model ?? DEFAULT_MODEL,
     messages: options.messages,
     tools: options.tools,
     tool_choice: options.toolChoice,
     response_format: options.responseFormat,
     reasoning_effort: options.reasoningEffort,
     temperature: options.temperature,
-    parallel_tool_calls: true,
   });
 }

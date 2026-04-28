@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import "dotenv/config";
+
 import { parseCliArgs, printHelp } from "./cli.js";
 import { startInteractiveShell } from "./interactive.js";
 import { printPlanOnly, runWorkflow } from "./workflow/run-agent-loop.js";

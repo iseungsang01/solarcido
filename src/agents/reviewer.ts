@@ -41,8 +41,10 @@ export async function reviewExecution(
   plan: ExecutionPlan,
   execution: ExecutionResult,
   reasoningEffort: ReasoningEffort = DEFAULT_REASONING_EFFORT,
+  model?: string,
 ): Promise<ReviewResult> {
   const response = await runSolarChat(client, {
+    model,
     reasoningEffort,
     temperature: 0.1,
     responseFormat: reviewResponseFormat,

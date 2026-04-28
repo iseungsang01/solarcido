@@ -45,8 +45,10 @@ export async function createPlan(
   client: OpenAI,
   goal: string,
   reasoningEffort: ReasoningEffort = DEFAULT_REASONING_EFFORT,
+  model?: string,
 ): Promise<ExecutionPlan> {
   const response = await runSolarChat(client, {
+    model,
     reasoningEffort,
     temperature: 0.2,
     responseFormat: plannerResponseFormat,

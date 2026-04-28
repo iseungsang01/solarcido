@@ -11,6 +11,7 @@ export type RunWorkflowOptions = {
   cwd?: string;
   maxSteps?: number;
   reasoningEffort?: ReasoningEffort;
+  model?: string;
 };
 
 export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
@@ -18,9 +19,10 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
   const reasoningEffort = options.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
+  const model = options.model;
 
   console.log(`\n[planner] Goal: ${options.goal}`);
-  const plan = await createPlan(client, options.goal, reasoningEffort);
+  const plan = await createPlan(client, options.goal, reasoningEffort, model);
   console.log(`[planner] ${plan.summary}`);
 
   for (const [index, step] of plan.steps.entries()) {
@@ -28,7 +30,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   }
 
   console.log(`\n[executor] Working in ${cwd}`);
-  const execution = await executePlan(client, options.goal, plan, cwd, maxSteps, reasoningEffort);
+  const execution = await executePlan(client, options.goal, plan, cwd, maxSteps, reasoningEffort, model);
   console.log(`[executor] ${execution.finish.summary}`);
 
   if (execution.finish.changed_files.length > 0) {
@@ -36,7 +38,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   }
 
   console.log(`\n[reviewer] Checking execution quality...`);
-  const review = await reviewExecution(client, options.goal, plan, execution, reasoningEffort);
+  const review = await reviewExecution(client, options.goal, plan, execution, reasoningEffort, model);
   console.log(`[reviewer] ${review.verdict}: ${review.summary}`);
 
   if (review.concerns.length > 0) {
@@ -57,7 +59,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
 export async function printPlanOnly(options: RunWorkflowOptions): Promise<void> {
   const client = createSolarClient();
   const reasoningEffort = options.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
-  const plan = await createPlan(client, options.goal, reasoningEffort);
+  const plan = await createPlan(client, options.goal, reasoningEffort, options.model);
 
   console.log(`\n[planner] ${plan.summary}`);
   for (const [index, step] of plan.steps.entries()) {

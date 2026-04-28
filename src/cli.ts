@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { DEFAULT_MAX_STEPS, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "./solar/constants.js";
+import { DEFAULT_MAX_STEPS, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "./solar/constants.js";
 
 export type CliCommand =
   | {
@@ -9,12 +9,14 @@ export type CliCommand =
       cwd: string;
       maxSteps: number;
       reasoningEffort: ReasoningEffort;
+      model: string;
     }
   | {
       mode: "interactive";
       cwd: string;
       maxSteps: number;
       reasoningEffort: ReasoningEffort;
+      model: string;
     }
   | { mode: "help" };
 
@@ -32,13 +34,19 @@ solarcido
 
 Usage:
   solarcido
-  solarcido run "your goal" [--cwd .] [--max-steps 10] [--reasoning low|medium|high]
-  solarcido plan "your goal" [--reasoning low|medium|high]
+  solarcido run "your goal" [--cwd .] [--max-steps 10] [--reasoning low|medium|high] [--model name]
+  solarcido plan "your goal" [--reasoning low|medium|high] [--model name]
 
-Examples:
-  solarcido
-  solarcido plan "Create a CLI design"
-  solarcido run "Inspect this repo and summarize it" --cwd . --max-steps 8 --reasoning medium
+Options:
+  --cwd <path>           working directory
+  --max-steps <number>   executor step limit
+  --reasoning <level>    low | medium | high
+  --model <name>         model to use for planner/executor/reviewer
+
+Interactive shell:
+  /                      show slash commands
+  /model                 show current model
+  /model <name>          set model for this session
   `);
 }
 
@@ -51,6 +59,7 @@ export function parseCliArgs(argv: string[]): CliCommand {
       cwd: process.cwd(),
       maxSteps: DEFAULT_MAX_STEPS,
       reasoningEffort: DEFAULT_REASONING_EFFORT,
+      model: DEFAULT_MODEL,
     };
   }
 
@@ -66,6 +75,7 @@ export function parseCliArgs(argv: string[]): CliCommand {
   let cwd = process.cwd();
   let maxSteps = DEFAULT_MAX_STEPS;
   let reasoningEffort: ReasoningEffort = DEFAULT_REASONING_EFFORT;
+  let model = DEFAULT_MODEL;
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
@@ -94,6 +104,18 @@ export function parseCliArgs(argv: string[]): CliCommand {
       continue;
     }
 
+    if (token === "--model") {
+      const nextModel = rest[index + 1]?.trim();
+
+      if (!nextModel) {
+        throw new Error("--model requires a value.");
+      }
+
+      model = nextModel;
+      index += 1;
+      continue;
+    }
+
     positional.push(token);
   }
 
@@ -109,5 +131,6 @@ export function parseCliArgs(argv: string[]): CliCommand {
     cwd,
     maxSteps,
     reasoningEffort,
+    model,
   };
 }

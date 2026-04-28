@@ -17,6 +17,7 @@ export async function executePlan(
   cwd: string,
   maxSteps = DEFAULT_MAX_STEPS,
   reasoningEffort: ReasoningEffort = DEFAULT_REASONING_EFFORT,
+  model?: string,
 ): Promise<ExecutionResult> {
   const tools = createToolDefinitions();
   const transcript: string[] = [];
@@ -45,6 +46,7 @@ export async function executePlan(
 
   for (let stepIndex = 0; stepIndex < maxSteps; stepIndex += 1) {
     const response = await runSolarChat(client, {
+      model,
       messages,
       tools,
       toolChoice: "auto",
