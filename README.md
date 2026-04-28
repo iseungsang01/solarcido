@@ -1,4 +1,4 @@
-# solarcido
+# Solarcido
 
 `solarcido`는 **SOLAR Commandline Interface Development Operator**입니다. Upstage의 `solar-pro3-260323`만 사용하는 agentic CLI이며, 여러 agent 역할은 분리하지만 실제 호출 모델은 하나만 고정합니다.
 
