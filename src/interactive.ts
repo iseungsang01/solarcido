@@ -18,14 +18,14 @@ export type InteractiveOptions = {
 };
 
 const ANSI = {
-  reset: "[0m",
-  bold: "[1m",
-  dim: "[2m",
-  yellow: "[38;5;220m",
-  amber: "[38;5;214m",
-  blue: "[38;5;111m",
-  slate: "[38;5;244m",
-  panel: "[48;5;236m",
+  reset: "\u001b[0m",
+  bold: "\u001b[1m",
+  dim: "\u001b[2m",
+  yellow: "\u001b[38;5;220m",
+  amber: "\u001b[38;5;214m",
+  blue: "\u001b[38;5;111m",
+  slate: "\u001b[38;5;244m",
+  panel: "\u001b[48;5;236m",
 } as const;
 
 const LOGO_LINES = [
@@ -38,7 +38,7 @@ const LOGO_LINES = [
 ];
 
 function stripAnsi(value: string): string {
-  return value.replace(/\[[0-9;]*m/g, "");
+  return value.replace(/\u001b\[[0-9;]*m/g, "");
 }
 
 function centerLine(value: string, width = output.columns ?? 100): string {
@@ -100,6 +100,7 @@ function printSlashCommands(options: InteractiveOptions): void {
     "/reasoning            show reasoning level",
     "/max-steps            show max steps",
     "/exit                 quit",
+    "/quit                 quit",
     "/quiet                toggle quiet mode (suppress assistant messages)",
     "/verbose              toggle verbose mode (show all messages)",
     "",
@@ -108,7 +109,7 @@ function printSlashCommands(options: InteractiveOptions): void {
   ]);
 }
 
-const ESC = "";
+const ESC = "\u001b";
 const PASTE_START = `${ESC}[200~`;
 const PASTE_END = `${ESC}[201~`;
 const ENABLE_BRACKETED_PASTE = `${ESC}[?2004h`;
@@ -126,7 +127,7 @@ class EOFError extends Error {
  * a multi-line paste arrives as a single submission rather than being split
  * by embedded newlines.
  */
-async function readLine(promptStr: string): Promise<string> {
+async function readRawLine(promptStr: string): Promise<string> {
   output.write(promptStr);
 
   return new Promise<string>((resolve, reject) => {
@@ -174,16 +175,17 @@ async function readLine(promptStr: string): Promise<string> {
 
         if (escState === "csi") {
           escSeq += ch;
-          if (escSeq === "200~") {
-            escState = "paste";
+          // Arrow keys: ESC[A, ESC[B, ESC[C, ESC[D]
+          if (/[A-Za-z]/.test(ch)) {
+            // Arrow key or other CSI
+            buf += escSeq;
+            escState = "none";
             escSeq = "";
             continue;
           }
-          if (/[A-Za-z~]/.test(ch)) {
-            // Other CSI (arrow keys etc.) — discard.
-            escState = "none";
-            escSeq = "";
-          }
+          // Other CSI sequences we discard
+          escState = "none";
+          escSeq = "";
           continue;
         }
 
@@ -206,12 +208,12 @@ async function readLine(promptStr: string): Promise<string> {
           }
           continue;
         }
-        if (ch === "") {
+        if (ch === "\x03") {
           cleanup();
           output.write("^C\n");
           process.exit(130);
         }
-        if (ch === "") {
+        if (ch === "\x1a") {
           if (buf.length === 0) {
             cleanup();
             reject(new EOFError());
@@ -240,7 +242,7 @@ const PROMPT = `${ANSI.amber}${ANSI.bold}code${ANSI.reset} ${ANSI.slate}❯${ANS
 async function collectGoalLines(): Promise<string> {
   const lines: string[] = [];
   while (true) {
-    const raw = await readLine(PROMPT);
+    const raw = await readRawLine(PROMPT);
     const trimmed = raw.trim();
 
     if (trimmed.startsWith("/")) {
@@ -254,6 +256,186 @@ async function collectGoalLines(): Promise<string> {
   return lines.join("\n");
 }
 
+/**
+ * Helper to detect arrow key CSI sequences.
+ */
+function isArrowKey(raw: string): boolean {
+  // Basic arrow keys: ESC[A, ESC[B, ESC[C, ESC[D]
+  // Also handle extended sequences like ESC[1A, ESC[2A, etc.
+  const arrowPattern = /^\u001b\[[0-9;]*[A-Za-z]$/;
+  return arrowPattern.test(raw);
+}
+
+/**
+ * Print slash commands with optional highlight.
+ */
+function printSlashCommandsWithHighlight(options: InteractiveOptions, selectedIndex?: number): void {
+  const commands = [
+    "/help",
+    "/run",
+    "/model",
+    "/cwd",
+    "/reasoning",
+    "/max-steps",
+    "/exit",
+    "/quit",
+    "/quiet",
+    "/verbose",
+  ];
+
+  const terminalWidth = output.columns ?? 100;
+  const panelWidth = Math.min(Math.max(terminalWidth - 10, 54), 96);
+  const innerWidth = panelWidth - 4;
+  const top = centerLine(`${ANSI.blue}╭─ SLASH COMMANDS ${'─'.repeat(Math.max(0, innerWidth - 14 - 2))}╮${ANSI.reset}`, terminalWidth);
+  const bottom = centerLine(`${ANSI.blue}╰${'─'.repeat(panelWidth - 2)}╯${ANSI.reset}`, terminalWidth);
+
+  console.log(top);
+  for (let i = 0; i < commands.length; i++) {
+    const line = commands[i];
+    if (selectedIndex !== undefined && i === selectedIndex) {
+      // Highlight selected command
+      const highlighted = `${ANSI.bold}${line}${ANSI.reset}`;
+      const row = `${ANSI.blue}│${ANSI.reset} ${ANSI.panel}${fitText(highlighted, innerWidth)}${ANSI.reset} ${ANSI.blue}│${ANSI.reset}`;
+      console.log(centerLine(row, terminalWidth));
+    } else {
+      const row = `${ANSI.blue}│${ANSI.reset} ${ANSI.panel}${fitText(line, innerWidth)}${ANSI.reset} ${ANSI.blue}│${ANSI.reset}`;
+      console.log(centerLine(row, terminalWidth));
+    }
+  }
+  console.log(bottom);
+}
+
+/**
+ * Select a slash command using arrow keys.
+ * Returns the selected command name (e.g., "/run") or the raw input if not an arrow key.
+ */
+async function selectSlashCommand(options: InteractiveOptions): Promise<string> {
+  printSlashCommandsWithHighlight(options);
+  let selectedIndex = 0;
+  while (true) {
+    const raw = await readRawLine(PROMPT);
+    const trimmed = raw.trim();
+
+    if (trimmed === "") continue;
+
+    if (isArrowKey(trimmed)) {
+      // Arrow key pressed
+      selectedIndex = Math.max(0, Math.min(selectedIndex - 1, commands.length - 1));
+      printSlashCommandsWithHighlight(options, selectedIndex);
+      continue;
+    }
+
+    // If Enter pressed (raw ends with \r or \n) or any other input
+    // treat as the command to execute.
+    // We'll just return the raw trimmed string.
+    return trimmed;
+  }
+}
+
+/**
+ * Parse a slash command string into command and optional arguments.
+ */
+function parseSlashCommand(cmd: string): { command: string; args?: string[] } {
+  const parts = cmd.trim().split(/\s+/);
+  if (parts.length === 0) return { command: "" };
+  const command = parts[0];
+  const args = parts.slice(1);
+  return { command, args };
+}
+
+/**
+ * Execute a slash command that changes session state.
+ */
+async function executeSlashCommand(session: InteractiveOptions, parsed: { command: string; args?: string[] }): Promise<void> {
+  switch (parsed.command) {
+    case "/model":
+      if (parsed.args?.length === 1) {
+        session.model = parsed.args[0];
+        console.log(`[assistant] Model changed to ${session.model}`);
+      } else {
+        console.log(`[assistant] Current model: ${session.model}`);
+      }
+      break;
+    case "/max-steps":
+      if (parsed.args?.length === 1) {
+        const raw = Number(parsed.args[0]);
+        if (!Number.isFinite(raw) || raw < 1) {
+          console.log("[assistant] Max steps must be a positive number.");
+        } else {
+          session.maxSteps = raw;
+          console.log(`[assistant] Max steps changed to ${raw}`);
+        }
+      } else {
+        console.log(`[assistant] Current max steps: ${session.maxSteps}`);
+      }
+      break;
+    case "/reasoning":
+      if (parsed.args?.length === 1) {
+        const effort = parsed.args[0];
+        if (effort === "low" || effort === "medium" || effort === "high") {
+          session.reasoningEffort = effort;
+          console.log(`[assistant] Reasoning effort changed to ${effort}`);
+        } else {
+          console.log("[assistant] Reasoning effort must be low, medium, or high.");
+        }
+      } else {
+        console.log(`[assistant] Current reasoning effort: ${session.reasoningEffort}`);
+      }
+      break;
+    case "/cwd":
+      console.log(`[assistant] Current working directory: ${session.cwd}`);
+      break;
+    case "/quiet":
+      session.quiet = true;
+      console.log("[assistant] Quiet mode enabled.");
+      break;
+    case "/verbose":
+      session.quiet = false;
+      console.log("[assistant] Verbose mode enabled.");
+      break;
+    case "/exit":
+    case "/quit":
+      console.log("[assistant] Exiting.");
+      process.exit(0);
+      break;
+    case "/help":
+      printHelp();
+      break;
+    default:
+      // Unknown slash command, treat as raw goal
+      console.log(`[assistant] Unknown slash command: ${parsed.command}`);
+      break;
+  }
+}
+
+/**
+ * Print CLI help.
+ */
+function printHelp(): void {
+  console.log(`
+solarcido
+
+Usage:
+  solarcido
+  solarcido run "your goal" [--cwd .] [--max-steps 10] [--reasoning low|medium|high] [--model name]
+
+Interactive shell:
+  /                      show slash commands
+  /model                 show current model
+  /model <name>         change model for this session
+  /cwd                  show working directory
+  /reasoning            show reasoning level
+  /max-steps            show max steps
+  /exit                 quit
+  /quiet                toggle quiet mode (suppress assistant messages)
+  /verbose              toggle verbose mode (show all messages)
+
+`);
+}
+
+/**
+ * Main interactive shell loop.
+ */
 export async function startInteractiveShell(options: InteractiveOptions): Promise<void> {
   const session: InteractiveOptions = {
     cwd: options.cwd,
@@ -264,14 +446,13 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
   };
 
   printShellHeader(session);
-
   output.write(ENABLE_BRACKETED_PASTE);
 
   try {
     while (true) {
       let raw: string;
       try {
-        raw = await readLine(PROMPT);
+        raw = await readRawLine(PROMPT);
       } catch (err) {
         if (err instanceof EOFError) break;
         throw err;
@@ -280,10 +461,15 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
       const trimmed = raw.trim();
       if (!trimmed) continue;
 
+      // Handle slash command selection
       if (trimmed === "/") {
-        printSlashCommands(session);
+        const selected = await selectSlashCommand(session);
+        const parsed = parseSlashCommand(selected);
+        await executeSlashCommand(session, parsed);
         continue;
       }
+
+      // Handle quiet/verbose commands (they are also slash commands but we keep them separate for simplicity)
       if (trimmed === "/quiet") {
         session.quiet = true;
         console.log("[assistant] Quiet mode enabled.");
@@ -294,8 +480,15 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
         console.log("[assistant] Verbose mode enabled.");
         continue;
       }
-      if (trimmed === "/exit" || trimmed === "/quit") break;
 
+      // Handle exit/quit
+      if (trimmed.toUpperCase() === "/EXIT" || trimmed.toUpperCase() === "/QUIT") {
+        console.log("[assistant] Exiting.");
+        process.exit(0);
+        continue;
+      }
+
+      // Handle EOF sentinel for multi-line goals
       if (trimmed.toUpperCase() === "EOF") {
         const block = await collectGoalLines();
         if (block) {
@@ -311,6 +504,7 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
         continue;
       }
 
+      // Normal goal execution
       await runWorkflow({
         goal: trimmed,
         cwd: session.cwd,
