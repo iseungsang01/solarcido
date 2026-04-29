@@ -1,26 +1,31 @@
-import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-import { printHelp } from "./cli.js";
 import { DEFAULT_MODEL, type ReasoningEffort } from "./solar/constants.js";
 import { runWorkflow } from "./workflow/run-agent-loop.js";
 
+/**
+ * Interactive shell options.
+ */
 export type InteractiveOptions = {
   cwd: string;
   maxSteps: number;
   reasoningEffort: ReasoningEffort;
   model: string;
+  /**
+   * When true, suppress assistant messages (only tool output).
+   */
+  quiet?: boolean;
 };
 
 const ANSI = {
-  reset: "\u001b[0m",
-  bold: "\u001b[1m",
-  dim: "\u001b[2m",
-  yellow: "\u001b[38;5;220m",
-  amber: "\u001b[38;5;214m",
-  blue: "\u001b[38;5;111m",
-  slate: "\u001b[38;5;244m",
-  panel: "\u001b[48;5;236m",
+  reset: "[0m",
+  bold: "[1m",
+  dim: "[2m",
+  yellow: "[38;5;220m",
+  amber: "[38;5;214m",
+  blue: "[38;5;111m",
+  slate: "[38;5;244m",
+  panel: "[48;5;236m",
 } as const;
 
 const LOGO_LINES = [
@@ -29,21 +34,21 @@ const LOGO_LINES = [
   " ███████╗██║   ██║██║     ███████║██████╔╝██║     ██║██║  ██║██║   ██║",
   " ╚════██║██║   ██║██║     ██╔══██║██╔══██╗██║     ██║██║  ██║██║   ██║",
   " ███████║╚██████╔╝███████╗██║  ██║██║  ██║╚██████╗██║██████╔╝╚██████╔╝",
-  " ╚══════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝╚═════╝  ╚═════╝ ",
+  " ╚══════╝ ╚═════╝ ╚══════╝╚═╝  ═╝╚═╝  ═╝ ╚═════╝╚═╝╚═════╝  ═════╝ ",
 ];
 
 function stripAnsi(value: string): string {
-  return value.replace(/\u001b\[[0-9;]*m/g, "");
+  return value.replace(/\[[0-9;]*m/g, "");
 }
 
 function centerLine(value: string, width = output.columns ?? 100): string {
   const visibleWidth = stripAnsi(value).length;
   const padding = Math.max(0, Math.floor((width - visibleWidth) / 2));
-  return `${" ".repeat(padding)}${value}`;
+  return `${' '.repeat(padding)}${value}`;
 }
 
 function fitText(value: string, width: number): string {
-  const clean = value.length > width ? `${value.slice(0, Math.max(0, width - 1))}…` : value;
+  const clean = value.length > width ? `${value.slice(0, Math.max(0, width - 1))}...` : value;
   return clean.padEnd(width, " ");
 }
 
@@ -51,8 +56,8 @@ function printPanel(title: string, lines: string[]): void {
   const terminalWidth = output.columns ?? 100;
   const panelWidth = Math.min(Math.max(terminalWidth - 10, 54), 96);
   const innerWidth = panelWidth - 4;
-  const top = centerLine(`${ANSI.blue}╭─ ${title} ${"─".repeat(Math.max(0, innerWidth - title.length - 2))}╮${ANSI.reset}`, terminalWidth);
-  const bottom = centerLine(`${ANSI.blue}╰${"─".repeat(panelWidth - 2)}╯${ANSI.reset}`, terminalWidth);
+  const top = centerLine(`${ANSI.blue}╭─ ${title} ${'─'.repeat(Math.max(0, innerWidth - title.length - 2))}╮${ANSI.reset}`, terminalWidth);
+  const bottom = centerLine(`${ANSI.blue}╰${'─'.repeat(panelWidth - 2)}╯${ANSI.reset}`, terminalWidth);
 
   console.log(top);
   for (const line of lines) {
@@ -80,6 +85,7 @@ function printShellHeader(options: InteractiveOptions): void {
     `cwd        ${options.cwd}`,
     `reasoning  ${options.reasoningEffort}`,
     `max steps  ${options.maxSteps}`,
+    `quiet      ${options.quiet ?? false ? "ON" : "OFF"}`,
   ]);
   console.log("");
 }
@@ -94,9 +100,158 @@ function printSlashCommands(options: InteractiveOptions): void {
     "/reasoning            show reasoning level",
     "/max-steps            show max steps",
     "/exit                 quit",
+    "/quiet                toggle quiet mode (suppress assistant messages)",
+    "/verbose              toggle verbose mode (show all messages)",
     "",
     `active model         ${options.model}`,
+    `quiet mode           ${options.quiet ?? false ? "ON" : "OFF"}`,
   ]);
+}
+
+const ESC = "";
+const PASTE_START = `${ESC}[200~`;
+const PASTE_END = `${ESC}[201~`;
+const ENABLE_BRACKETED_PASTE = `${ESC}[?2004h`;
+const DISABLE_BRACKETED_PASTE = `${ESC}[?2004l`;
+
+class EOFError extends Error {
+  constructor() {
+    super("EOF");
+    this.name = "EOFError";
+  }
+}
+
+/**
+ * Read a line from stdin in raw mode with bracketed-paste support so that
+ * a multi-line paste arrives as a single submission rather than being split
+ * by embedded newlines.
+ */
+async function readLine(promptStr: string): Promise<string> {
+  output.write(promptStr);
+
+  return new Promise<string>((resolve, reject) => {
+    let buf = "";
+    let pasteBuf = "";
+    let escState: "none" | "esc" | "csi" | "paste" = "none";
+    let escSeq = "";
+
+    if (input.isTTY) input.setRawMode(true);
+    input.resume();
+    input.setEncoding("utf8");
+
+    let finished = false;
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      input.removeListener("data", onData);
+      if (input.isTTY) input.setRawMode(false);
+      input.pause();
+    };
+
+    const onData = (chunk: string) => {
+      for (const ch of chunk) {
+        if (escState === "paste") {
+          pasteBuf += ch;
+          if (pasteBuf.endsWith(PASTE_END)) {
+            const content = pasteBuf.slice(0, -PASTE_END.length).replace(/\r\n?/g, "\n");
+            pasteBuf = "";
+            escState = "none";
+            buf += content;
+            output.write(content);
+          }
+          continue;
+        }
+
+        if (escState === "esc") {
+          if (ch === "[") {
+            escState = "csi";
+            escSeq = "";
+          } else {
+            escState = "none";
+          }
+          continue;
+        }
+
+        if (escState === "csi") {
+          escSeq += ch;
+          if (escSeq === "200~") {
+            escState = "paste";
+            escSeq = "";
+            continue;
+          }
+          if (/[A-Za-z~]/.test(ch)) {
+            // Other CSI (arrow keys etc.) — discard.
+            escState = "none";
+            escSeq = "";
+          }
+          continue;
+        }
+
+        // none state
+        if (ch === ESC) {
+          escState = "esc";
+          continue;
+        }
+        if (ch === "\r" || ch === "\n") {
+          output.write("\n");
+          cleanup();
+          resolve(buf);
+          return;
+        }
+        if (ch === "" || ch === "\b") {
+          if (buf.length > 0) {
+            const last = buf[buf.length - 1];
+            buf = buf.slice(0, -1);
+            if (last !== "\n") output.write("\b \b");
+          }
+          continue;
+        }
+        if (ch === "") {
+          cleanup();
+          output.write("^C\n");
+          process.exit(130);
+        }
+        if (ch === "") {
+          if (buf.length === 0) {
+            cleanup();
+            reject(new EOFError());
+            return;
+          }
+          continue;
+        }
+        if (ch >= " " || ch === "\t") {
+          buf += ch;
+          output.write(ch);
+        }
+      }
+    };
+
+    input.on("data", onData);
+  });
+}
+
+const PROMPT = `${ANSI.amber}${ANSI.bold}code${ANSI.reset} ${ANSI.slate}❯${ANSI.reset} `;
+
+/**
+ * Collect lines until a sentinel line (EOF) or a slash command.
+ * Kept for the explicit `EOF` heredoc-style entry; bracketed paste handles
+ * the common multi-line case automatically.
+ */
+async function collectGoalLines(): Promise<string> {
+  const lines: string[] = [];
+  while (true) {
+    const raw = await readLine(PROMPT);
+    const trimmed = raw.trim();
+
+    if (trimmed.startsWith("/")) {
+      console.log(`[assistant] ${trimmed}`);
+      return "";
+    }
+    if (trimmed.toUpperCase() === "EOF") break;
+    if (trimmed === "") continue;
+    lines.push(trimmed);
+  }
+  return lines.join("\n");
 }
 
 export async function startInteractiveShell(options: InteractiveOptions): Promise<void> {
@@ -104,102 +259,70 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
     cwd: options.cwd,
     maxSteps: options.maxSteps,
     reasoningEffort: options.reasoningEffort,
-    model: options.model || DEFAULT_MODEL,
+    model: options.model ?? DEFAULT_MODEL,
+    quiet: options.quiet ?? false,
   };
 
   printShellHeader(session);
 
-  const rl = createInterface({ input, output, terminal: true });
+  output.write(ENABLE_BRACKETED_PASTE);
 
   try {
     while (true) {
-      const raw = await rl.question(`${ANSI.amber}${ANSI.bold}code${ANSI.reset} ${ANSI.slate}❯${ANSI.reset} `);
-      const command = raw.trim();
-
-      if (!command) {
-        continue;
+      let raw: string;
+      try {
+        raw = await readLine(PROMPT);
+      } catch (err) {
+        if (err instanceof EOFError) break;
+        throw err;
       }
 
-      if (command === "/exit" || command === "exit" || command === "quit") {
-        console.log("\nBye.");
-        break;
-      }
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
 
-      if (command === "/") {
+      if (trimmed === "/") {
         printSlashCommands(session);
         continue;
       }
-
-      if (command === "/help") {
-        printHelp();
+      if (trimmed === "/quiet") {
+        session.quiet = true;
+        console.log("[assistant] Quiet mode enabled.");
         continue;
       }
-
-      if (command === "/cwd") {
-        console.log(`cwd: ${session.cwd}`);
+      if (trimmed === "/verbose") {
+        session.quiet = false;
+        console.log("[assistant] Verbose mode enabled.");
         continue;
       }
+      if (trimmed === "/exit" || trimmed === "/quit") break;
 
-      if (command === "/reasoning") {
-        console.log(`reasoning: ${session.reasoningEffort}`);
-        continue;
-      }
-
-      if (command === "/max-steps") {
-        console.log(`max steps: ${session.maxSteps}`);
-        continue;
-      }
-
-      if (command === "/model") {
-        console.log(`model: ${session.model}`);
-        continue;
-      }
-
-      if (command.startsWith("/model ")) {
-        const nextModel = command.slice(7).trim();
-
-        if (!nextModel) {
-          console.log("Usage: /model <name>");
-          continue;
+      if (trimmed.toUpperCase() === "EOF") {
+        const block = await collectGoalLines();
+        if (block) {
+          await runWorkflow({
+            goal: block,
+            cwd: session.cwd,
+            maxSteps: session.maxSteps,
+            reasoningEffort: session.reasoningEffort,
+            model: session.model,
+            quiet: session.quiet,
+          });
         }
-
-        session.model = nextModel;
-        console.log(`model updated: ${session.model}`);
-        continue;
-      }
-
-      if (command.startsWith("/run ")) {
-        const goal = command.slice(5).trim();
-
-        if (!goal) {
-          console.log("Usage: /run <goal>");
-          continue;
-        }
-
-        await runWorkflow({
-          goal,
-          cwd: session.cwd,
-          maxSteps: session.maxSteps,
-          reasoningEffort: session.reasoningEffort,
-          model: session.model,
-        });
-        continue;
-      }
-
-      if (command.startsWith("/")) {
-        printSlashCommands(session);
         continue;
       }
 
       await runWorkflow({
-        goal: command,
+        goal: trimmed,
         cwd: session.cwd,
         maxSteps: session.maxSteps,
         reasoningEffort: session.reasoningEffort,
         model: session.model,
+        quiet: session.quiet,
       });
     }
   } finally {
-    rl.close();
+    output.write(DISABLE_BRACKETED_PASTE);
+    if (input.isTTY) input.setRawMode(false);
+    input.pause();
   }
 }

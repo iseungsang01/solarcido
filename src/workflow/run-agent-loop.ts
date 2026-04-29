@@ -5,14 +5,24 @@ import { createSolarClient, runSolarChat } from "../solar/client.js";
 import { DEFAULT_MAX_STEPS, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
 import { createToolDefinitions, executeToolCall, type FinishPayload } from "../tools/registry.js";
 
+/**
+ * Run workflow options.
+ */
 export type RunWorkflowOptions = {
   goal: string;
   cwd?: string;
   maxSteps?: number;
   reasoningEffort?: ReasoningEffort;
   model?: string;
+  /**
+   * When true, suppress assistant messages (only tool output).
+   */
+  quiet?: boolean;
 };
 
+/**
+ * Run the workflow.
+ */
 export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   const client = createSolarClient();
   const cwd = path.resolve(options.cwd ?? process.cwd());
@@ -42,8 +52,10 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     },
   ];
 
-  console.log(`\n[assistant] Goal: ${options.goal}`);
-  console.log(`[assistant] Working in ${cwd}`);
+  // Print assistant messages only if not quiet.
+  if (!options.quiet) {
+    console.log(`\n[assistant] Working in ${cwd}`);
+  }
 
   for (let stepIndex = 0; stepIndex < maxSteps; stepIndex += 1) {
     const response = await runSolarChat(client, {
@@ -69,7 +81,9 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
 
     if (message.content) {
       transcript.push(`assistant: ${message.content}`);
-      console.log(`[assistant] ${message.content}`);
+      if (!options.quiet) {
+        console.log(`[assistant] ${message.content}`);
+      }
     }
 
     if (!message.tool_calls || message.tool_calls.length === 0) {
@@ -79,7 +93,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     for (const toolCall of message.tool_calls) {
       const result = await executeToolCall(cwd, toolCall);
       transcript.push(`tool:${result.toolName}: ${result.content}`);
-      console.log(`[tool:${result.toolName}] ${result.content}`);
+      console.log(`[tool:${result.toolName}] ${summarizeToolOutput(result.content)}`);
 
       messages.push({
         role: "tool",
@@ -97,11 +111,27 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   throw new Error(`Assistant hit the max step limit (${maxSteps}) without calling finish.`);
 }
 
+/**
+ * Reduce a tool result to a single line for the on-screen log. The full
+ * content still goes into the model's transcript.
+ */
+function summarizeToolOutput(content: string): string {
+  const trimmed = content.replace(/\s+$/, "");
+  if (!trimmed) return "(empty)";
+  const cap = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+  const lines = trimmed.split(/\r?\n/);
+  if (lines.length === 1) return cap(lines[0], 200);
+  return `${cap(lines[0], 160)}  [+${lines.length - 1} more lines]`;
+}
+
+/**
+ * Print finish payload.
+ */
 function printFinish(finish: FinishPayload): void {
   console.log(`\n[done] ${finish.summary}`);
 
   if (finish.changed_files.length > 0) {
-    console.log(`[done] Changed files: ${finish.changed_files.join(", ")}`);
+    console.log(`[done] Changed files: ${finish.changed_files.join(", ")})`);
   }
 
   if (finish.next_steps.length > 0) {
