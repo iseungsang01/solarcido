@@ -83,6 +83,7 @@ npm run build
 
 - The default model is `solar-pro3-260323`.
 - The assistant uses repository tools for file listing, code search, line-window reads, focused string edits, whole-file writes, command execution, and task completion.
+- For change requests, the workflow rejects a premature `finish` until a file edit or write has succeeded, so the assistant cannot stop at expected actions only.
 - Command failures are returned to the assistant as structured output instead of crashing the workflow.
 - The assistant runs until it calls `finish`, is interrupted, or hits an external runtime/API limit.
 - File tools are constrained to the selected working directory.

@@ -1,6 +1,11 @@
 import path from "node:path";
 import type OpenAI from "openai";
 
+import {
+  blockedPrematureFinishMessage,
+  goalLikelyRequiresModification,
+  isSuccessfulModificationTool,
+} from "../agents/execution-guard.js";
 import type { ApprovalPolicy, SandboxMode } from "../config/schema.js";
 import { completeSession, createSession, failSession } from "../sessions/session-store.js";
 import { createSolarClient, runSolarChat } from "../solar/client.js";
@@ -43,6 +48,8 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   });
   const tools = createToolDefinitions();
   const transcript: string[] = [];
+  const requiresModification = goalLikelyRequiresModification(options.goal);
+  let successfulModification = false;
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: "system",
@@ -50,6 +57,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
         "You are Solarcido, a direct coding assistant for the current repository.",
         "Work like a coding terminal assistant: inspect files, edit files, run commands, and finish only when the task is done.",
         "Use tools whenever you need repository context or need to make changes.",
+        "If the goal asks for code or documentation changes, do not stop at a plan or expected actions; inspect the relevant files, make the edits with edit_file or write_file, then verify.",
         "Prefer search_files for locating code, read_file with offset/limit for focused inspection, and edit_file for small precise changes.",
         "Use write_file only when creating a new file or replacing a whole file is clearly safer.",
         "After edits, run the most relevant verification command when one exists.",
@@ -57,6 +65,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
         "Stay inside the provided working directory.",
         `Current sandbox mode: ${sandbox}. Current approval policy: ${approvalPolicy}.`,
         "Do not create a plan/review split unless the user explicitly asks for it.",
+        "If you describe planned actions without tool calls, you have not executed the task yet.",
         "When the task is complete, call the finish tool.",
       ].join(" "),
     },
@@ -106,27 +115,41 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
       }
 
       if (!message.tool_calls || message.tool_calls.length === 0) {
+        messages.push({
+          role: "user",
+          content: requiresModification
+            ? "Continue by using repository tools now. This goal requires actual edits before finish; do not only list expected actions."
+            : "Continue by using repository tools if more work is needed, or call finish only if the task is actually complete.",
+        });
         continue;
       }
 
       for (const toolCall of message.tool_calls) {
         const result = await executeToolCall(cwd, toolCall, { approvalPolicy, sandbox });
-        transcript.push(`tool:${result.toolName}: ${result.content}`);
-        console.log(`[tool:${result.toolName}] ${summarizeToolOutput(result.content)}`);
+        const finishBlocked = result.finish && requiresModification && sandbox !== "read-only" && !successfulModification;
+        const toolContent = finishBlocked ? blockedPrematureFinishMessage() : result.content;
+        const finish = finishBlocked ? undefined : result.finish;
+
+        transcript.push(`tool:${result.toolName}: ${toolContent}`);
+        console.log(`[tool:${result.toolName}] ${summarizeToolOutput(toolContent)}`);
 
         messages.push({
           role: "tool",
           tool_call_id: toolCall.id,
-          content: result.content,
+          content: toolContent,
         });
 
-        if (result.finish) {
+        if (isSuccessfulModificationTool(result.toolName, toolContent)) {
+          successfulModification = true;
+        }
+
+        if (finish) {
           await completeSession(session, {
-            summary: result.finish.summary,
-            changedFiles: result.finish.changed_files,
-            nextSteps: result.finish.next_steps,
+            summary: finish.summary,
+            changedFiles: finish.changed_files,
+            nextSteps: finish.next_steps,
           });
-          printFinish(result.finish);
+          printFinish(finish);
           return;
         }
       }

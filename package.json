@@ -11,7 +11,7 @@
     "build": "npx tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "test": "npm run build && node tests/cli.test.mjs && node tests/config.test.mjs && node tests/approvals.test.mjs && node tests/sessions.test.mjs && node tests/tools.test.mjs",
+    "test": "npm run build && node tests/cli.test.mjs && node tests/config.test.mjs && node tests/approvals.test.mjs && node tests/sessions.test.mjs && node tests/tools.test.mjs && node tests/execution-guard.test.mjs",
     "typecheck": "npx tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
