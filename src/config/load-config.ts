@@ -10,6 +10,8 @@ import {
   isConfigKey,
 } from "./schema.js";
 
+const LEGACY_CONFIG_KEYS = ["maxSteps"] as const;
+
 export function getSolarcidoHome(): string {
   return path.resolve(process.env.SOLARCIDO_HOME ?? path.join(os.homedir(), ".solarcido"));
 }
@@ -68,13 +70,6 @@ export function parseConfigValue(key: ConfigKey, rawValue: string): SolarcidoCon
         return rawValue;
       }
       throw new Error("reasoningEffort must be low, medium, or high.");
-    case "maxSteps": {
-      const value = Number(rawValue);
-      if (Number.isInteger(value) && value >= 1) {
-        return value;
-      }
-      throw new Error("maxSteps must be a positive integer.");
-    }
     case "approvalPolicy":
       if (rawValue === "never" || rawValue === "on-failure" || rawValue === "on-request") {
         return rawValue;
@@ -104,6 +99,10 @@ export function parseConfigKey(rawKey: string): ConfigKey {
     return rawKey;
   }
 
+  if (isLegacyConfigKey(rawKey)) {
+    throw new Error(`${rawKey} is no longer supported. Solarcido runs without a step limit.`);
+  }
+
   throw new Error(`Unknown config key: ${rawKey}. Valid keys: ${CONFIG_KEYS.join(", ")}`);
 }
 
@@ -113,7 +112,7 @@ function validateConfig(value: unknown, configPath: string): SolarcidoConfig {
   }
 
   for (const key of Object.keys(value)) {
-    if (!isConfigKey(key)) {
+    if (!isConfigKey(key) && !isLegacyConfigKey(key)) {
       throw new Error(`Unknown config key in ${configPath}: ${key}. Valid keys: ${CONFIG_KEYS.join(", ")}`);
     }
   }
@@ -137,9 +136,6 @@ function validateConfigField(key: ConfigKey, value: unknown): SolarcidoConfig[Co
     case "reasoningEffort":
       if (value === "low" || value === "medium" || value === "high") return value;
       throw new Error("reasoningEffort must be low, medium, or high.");
-    case "maxSteps":
-      if (typeof value === "number" && Number.isInteger(value) && value >= 1) return value;
-      throw new Error("maxSteps must be a positive integer.");
     case "approvalPolicy":
       if (value === "never" || value === "on-failure" || value === "on-request") return value;
       throw new Error("approvalPolicy must be never, on-failure, or on-request.");
@@ -154,6 +150,10 @@ function validateConfigField(key: ConfigKey, value: unknown): SolarcidoConfig[Co
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isLegacyConfigKey(value: string): value is (typeof LEGACY_CONFIG_KEYS)[number] {
+  return (LEGACY_CONFIG_KEYS as readonly string[]).includes(value);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

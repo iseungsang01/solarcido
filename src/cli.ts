@@ -1,10 +1,9 @@
 import path from "node:path";
 
 import type { ApprovalPolicy, SandboxMode } from "./config/schema.js";
-import { DEFAULT_MAX_STEPS, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "./solar/constants.js";
+import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "./solar/constants.js";
 
 export type CliDefaults = {
-  maxSteps: number;
   reasoningEffort: ReasoningEffort;
   model: string;
   approvalPolicy: ApprovalPolicy;
@@ -17,7 +16,6 @@ export type CliCommand =
       mode: "run";
       goal: string;
       cwd: string;
-      maxSteps: number;
       reasoningEffort: ReasoningEffort;
       model: string;
       approvalPolicy: ApprovalPolicy;
@@ -27,7 +25,6 @@ export type CliCommand =
   | {
       mode: "interactive";
       cwd: string;
-      maxSteps: number;
       reasoningEffort: ReasoningEffort;
       model: string;
       approvalPolicy: ApprovalPolicy;
@@ -61,7 +58,7 @@ solarcido
 
 Usage:
   solarcido
-  solarcido run "your goal" [--cwd .] [--max-steps 10] [--reasoning low|medium|high] [--model name] [--approval-policy on-failure] [--sandbox workspace-write] [--quiet]
+  solarcido run "your goal" [--cwd .] [--reasoning low|medium|high] [--model name] [--approval-policy on-failure] [--sandbox workspace-write] [--quiet]
   solarcido config get [key]
   solarcido config set <key> <value>
   solarcido config path
@@ -70,7 +67,6 @@ Usage:
 
 Options:
   --cwd <path>           working directory
-  --max-steps <number>   assistant step limit
   --reasoning <level>    low | medium | high
   --model <name>         model to use for the coding assistant
   --approval-policy <p>  never | on-failure | on-request
@@ -83,7 +79,6 @@ Interactive shell:
   /model                 show current model
   /model <name>          set model for this session
   /reasoning <level>     set reasoning level
-  /max-steps <number>    set step limit
   /approval <policy>     set approval policy
   /sandbox <mode>        set sandbox mode
   /quiet                 suppress assistant chat messages
@@ -92,7 +87,6 @@ Interactive shell:
 }
 
 const BUILT_IN_DEFAULTS: CliDefaults = {
-  maxSteps: DEFAULT_MAX_STEPS,
   reasoningEffort: DEFAULT_REASONING_EFFORT,
   model: DEFAULT_MODEL,
   approvalPolicy: "on-failure",
@@ -107,7 +101,6 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
     return {
       mode: "interactive",
       cwd: process.cwd(),
-      maxSteps: defaults.maxSteps,
       reasoningEffort: defaults.reasoningEffort,
       model: defaults.model,
       approvalPolicy: defaults.approvalPolicy,
@@ -165,7 +158,6 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
 
   const positional: string[] = [];
   let cwd = process.cwd();
-  let maxSteps = defaults.maxSteps;
   let reasoningEffort: ReasoningEffort = defaults.reasoningEffort;
   let model = defaults.model;
   let approvalPolicy = defaults.approvalPolicy;
@@ -188,7 +180,6 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
         throw new Error("--max-steps must be a positive number.");
       }
 
-      maxSteps = raw;
       index += 1;
       continue;
     }
@@ -249,7 +240,6 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
     mode,
     goal,
     cwd,
-    maxSteps,
     reasoningEffort,
     model,
     approvalPolicy,

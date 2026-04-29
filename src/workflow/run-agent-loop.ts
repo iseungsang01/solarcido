@@ -4,7 +4,7 @@ import type OpenAI from "openai";
 import type { ApprovalPolicy, SandboxMode } from "../config/schema.js";
 import { completeSession, createSession, failSession } from "../sessions/session-store.js";
 import { createSolarClient, runSolarChat } from "../solar/client.js";
-import { DEFAULT_MAX_STEPS, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
+import { DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
 import { createToolDefinitions, executeToolCall, type FinishPayload } from "../tools/registry.js";
 
 /**
@@ -13,7 +13,6 @@ import { createToolDefinitions, executeToolCall, type FinishPayload } from "../t
 export type RunWorkflowOptions = {
   goal: string;
   cwd?: string;
-  maxSteps?: number;
   reasoningEffort?: ReasoningEffort;
   model?: string;
   approvalPolicy?: ApprovalPolicy;
@@ -30,7 +29,6 @@ export type RunWorkflowOptions = {
 export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   const client = createSolarClient();
   const cwd = path.resolve(options.cwd ?? process.cwd());
-  const maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
   const reasoningEffort = options.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
   const model = options.model;
   const approvalPolicy = options.approvalPolicy ?? "on-failure";
@@ -78,7 +76,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   }
 
   try {
-    for (let stepIndex = 0; stepIndex < maxSteps; stepIndex += 1) {
+    while (true) {
       const response = await runSolarChat(client, {
         model,
         messages,
@@ -133,8 +131,6 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
         }
       }
     }
-
-    throw new Error(`Assistant hit the max step limit (${maxSteps}) without calling finish.`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await failSession(session, message);

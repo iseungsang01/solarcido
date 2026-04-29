@@ -45,7 +45,6 @@ test("loadConfig merges partial config with defaults", async () => {
     assert.deepEqual(await loadConfig(), {
       ...DEFAULT_CONFIG,
       model: "solar-custom",
-      maxSteps: 4,
     });
   });
 });
@@ -61,9 +60,12 @@ test("loadConfig rejects unknown keys", async () => {
 
 test("parseConfigValue validates typed config values", () => {
   assert.equal(parseConfigValue("reasoningEffort", "high"), "high");
-  assert.equal(parseConfigValue("maxSteps", "5"), 5);
   assert.equal(parseConfigValue("quiet", "true"), true);
   assert.throws(() => parseConfigValue("sandbox", "danger-full-access"), /sandbox must be/);
+});
+
+test("parseConfigKey rejects legacy maxSteps", () => {
+  assert.throws(() => parseConfigKey("maxSteps"), /no longer supported/);
 });
 
 test("setConfigValue updates a single key", () => {

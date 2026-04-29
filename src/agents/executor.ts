@@ -1,6 +1,6 @@
 import type OpenAI from "openai";
 
-import { DEFAULT_MAX_STEPS, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
+import { DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
 import { runSolarChat } from "../solar/client.js";
 import type { ExecutionPlan } from "./planner.js";
 import { createToolDefinitions, executeToolCall, type FinishPayload } from "../tools/registry.js";
@@ -15,7 +15,6 @@ export async function executePlan(
   goal: string,
   plan: ExecutionPlan,
   cwd: string,
-  maxSteps = DEFAULT_MAX_STEPS,
   reasoningEffort: ReasoningEffort = DEFAULT_REASONING_EFFORT,
   model?: string,
 ): Promise<ExecutionResult> {
@@ -44,7 +43,7 @@ export async function executePlan(
     },
   ];
 
-  for (let stepIndex = 0; stepIndex < maxSteps; stepIndex += 1) {
+  while (true) {
     const response = await runSolarChat(client, {
       model,
       messages,
@@ -92,6 +91,4 @@ export async function executePlan(
       }
     }
   }
-
-  throw new Error(`Executor hit the max step limit (${maxSteps}) without calling finish.`);
 }

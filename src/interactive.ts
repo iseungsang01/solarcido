@@ -6,7 +6,6 @@ import { runWorkflow } from "./workflow/run-agent-loop.js";
 
 export type InteractiveOptions = {
   cwd: string;
-  maxSteps: number;
   reasoningEffort: ReasoningEffort;
   model: string;
   approvalPolicy?: ApprovalPolicy;
@@ -41,7 +40,6 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/help", desc: "show available commands" },
   { name: "/model", desc: "show or set model" },
   { name: "/reasoning", desc: "show or set reasoning level" },
-  { name: "/max-steps", desc: "show or set max steps" },
   { name: "/approval", desc: "show or set approval policy" },
   { name: "/sandbox", desc: "show or set sandbox mode" },
   { name: "/cwd", desc: "show working directory" },
@@ -94,7 +92,6 @@ function printShellHeader(options: InteractiveOptions): void {
   console.log(`  ${ANSI.slate}model${ANSI.reset}      ${options.model}`);
   console.log(`  ${ANSI.slate}cwd${ANSI.reset}        ${options.cwd}`);
   console.log(`  ${ANSI.slate}reasoning${ANSI.reset}  ${options.reasoningEffort}`);
-  console.log(`  ${ANSI.slate}max steps${ANSI.reset}  ${options.maxSteps}`);
   console.log(`  ${ANSI.slate}approval${ANSI.reset}   ${options.approvalPolicy ?? "on-failure"}`);
   console.log(`  ${ANSI.slate}sandbox${ANSI.reset}    ${options.sandbox ?? "workspace-write"}`);
   console.log("");
@@ -331,7 +328,6 @@ function printStatus(session: InteractiveOptions): void {
   console.log(`  ${ANSI.slate}model${ANSI.reset}      ${session.model}`);
   console.log(`  ${ANSI.slate}cwd${ANSI.reset}        ${session.cwd}`);
   console.log(`  ${ANSI.slate}reasoning${ANSI.reset}  ${session.reasoningEffort}`);
-  console.log(`  ${ANSI.slate}max steps${ANSI.reset}  ${session.maxSteps}`);
   console.log(`  ${ANSI.slate}approval${ANSI.reset}   ${session.approvalPolicy ?? "on-failure"}`);
   console.log(`  ${ANSI.slate}sandbox${ANSI.reset}    ${session.sandbox ?? "workspace-write"}`);
   console.log(`  ${ANSI.slate}quiet${ANSI.reset}      ${session.quiet ? "on" : "off"}`);
@@ -347,14 +343,6 @@ function executeSlashCommand(
         session.model = parsed.args[0];
       } else {
         console.log(`  ${ANSI.slate}model${ANSI.reset}  ${session.model}`);
-      }
-      return true;
-    case "/max-steps":
-      if (parsed.args.length === 1) {
-        const n = Number(parsed.args[0]);
-        if (Number.isFinite(n) && n >= 1) session.maxSteps = n;
-      } else {
-        console.log(`  ${ANSI.slate}max steps${ANSI.reset}  ${session.maxSteps}`);
       }
       return true;
     case "/reasoning":
@@ -410,7 +398,6 @@ function executeSlashCommand(
 export async function startInteractiveShell(options: InteractiveOptions): Promise<void> {
   const session: InteractiveOptions = {
     cwd: options.cwd,
-    maxSteps: options.maxSteps,
     reasoningEffort: options.reasoningEffort,
     model: options.model ?? DEFAULT_MODEL,
     approvalPolicy: options.approvalPolicy ?? "on-failure",
@@ -443,7 +430,6 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
       await runWorkflow({
         goal: trimmed,
         cwd: session.cwd,
-        maxSteps: session.maxSteps,
         reasoningEffort: session.reasoningEffort,
         model: session.model,
         approvalPolicy: session.approvalPolicy,

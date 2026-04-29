@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULT_MAX_STEPS, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT } from "../dist/solar/constants.js";
+import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT } from "../dist/solar/constants.js";
 import { parseCliArgs } from "../dist/cli.js";
 
 test("parseCliArgs returns interactive defaults without arguments", () => {
@@ -9,7 +9,6 @@ test("parseCliArgs returns interactive defaults without arguments", () => {
 
   assert.equal(command.mode, "interactive");
   assert.equal(command.cwd, process.cwd());
-  assert.equal(command.maxSteps, DEFAULT_MAX_STEPS);
   assert.equal(command.reasoningEffort, DEFAULT_REASONING_EFFORT);
   assert.equal(command.model, DEFAULT_MODEL);
   assert.equal(command.approvalPolicy, "on-failure");
@@ -25,8 +24,6 @@ test("parseCliArgs parses run flags", () => {
     "bug",
     "--cwd",
     ".",
-    "--max-steps",
-    "4",
     "--reasoning",
     "high",
     "--model",
@@ -41,7 +38,6 @@ test("parseCliArgs parses run flags", () => {
   assert.equal(command.mode, "run");
   assert.equal(command.goal, "fix the bug");
   assert.equal(command.cwd, process.cwd());
-  assert.equal(command.maxSteps, 4);
   assert.equal(command.reasoningEffort, "high");
   assert.equal(command.model, "solar-test");
   assert.equal(command.approvalPolicy, "on-request");
@@ -49,7 +45,13 @@ test("parseCliArgs parses run flags", () => {
   assert.equal(command.quiet, true);
 });
 
-test("parseCliArgs rejects invalid max steps", () => {
+test("parseCliArgs accepts deprecated max steps as a no-op", () => {
+  const command = parseCliArgs(["run", "goal", "--max-steps", "4"]);
+  assert.equal(command.mode, "run");
+  assert.equal(command.goal, "goal");
+});
+
+test("parseCliArgs rejects invalid deprecated max steps", () => {
   assert.throws(() => parseCliArgs(["run", "goal", "--max-steps", "0"]), /positive number/);
 });
 
@@ -77,7 +79,6 @@ test("parseCliArgs accepts config commands", () => {
 
 test("parseCliArgs can use config defaults", () => {
   const command = parseCliArgs([], {
-    maxSteps: 3,
     reasoningEffort: "high",
     model: "solar-configured",
     approvalPolicy: "never",
@@ -86,7 +87,6 @@ test("parseCliArgs can use config defaults", () => {
   });
 
   assert.equal(command.mode, "interactive");
-  assert.equal(command.maxSteps, 3);
   assert.equal(command.reasoningEffort, "high");
   assert.equal(command.model, "solar-configured");
   assert.equal(command.approvalPolicy, "never");

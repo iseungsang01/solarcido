@@ -43,7 +43,7 @@ solarcido> update README to match the current behavior
 You can also run a single task directly:
 
 ```bash
-solarcido run "refactor the command parser" --cwd . --max-steps 8 --reasoning medium
+solarcido run "refactor the command parser" --cwd . --reasoning medium
 ```
 
 Persistent defaults are stored in `~/.solarcido/config.json`:
@@ -53,7 +53,6 @@ solarcido config path
 solarcido config get
 solarcido config get model
 solarcido config set model solar-pro3-260323
-solarcido config set maxSteps 12
 ```
 
 Workflow runs write compact session metadata under `~/.solarcido/sessions/`:
@@ -66,7 +65,6 @@ solarcido sessions show <id>
 ## Options
 
 - `--cwd`: working directory
-- `--max-steps`: assistant step limit
 - `--reasoning`: `low | medium | high`
 - `--model`: model to use for the coding assistant
 - `--approval-policy`: `never | on-failure | on-request`
@@ -86,6 +84,7 @@ npm run build
 - The default model is `solar-pro3-260323`.
 - The assistant uses repository tools for file listing, code search, line-window reads, focused string edits, whole-file writes, command execution, and task completion.
 - Command failures are returned to the assistant as structured output instead of crashing the workflow.
+- The assistant runs until it calls `finish`, is interrupted, or hits an external runtime/API limit.
 - File tools are constrained to the selected working directory.
 - The project architecture and implementation rules are defined in `docs/SPEC.md`.
 - The implementation sequence is tracked in `docs/ROADMAP.md`.

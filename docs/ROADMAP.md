@@ -82,7 +82,6 @@ Target shape:
 {
   "model": "solar-pro3-260323",
   "reasoningEffort": "medium",
-  "maxSteps": 10,
   "approvalPolicy": "on-failure",
   "sandbox": "workspace-write",
   "quiet": false
@@ -212,6 +211,8 @@ Implementation rules:
 - Keep session files small; do not dump huge tool outputs without limits.
 
 ## Phase 6: MCP Foundation
+
+Status: next.
 
 Goal: prepare MCP without spreading MCP-specific logic through the whole app.
 

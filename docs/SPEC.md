@@ -56,7 +56,6 @@ Required flags:
 
 ```txt
 --cwd <path>           working directory, default process.cwd()
---max-steps <number>   assistant step limit
 --reasoning <level>    low | medium | high
 --model <name>         model override
 --quiet                suppress assistant chat messages
@@ -80,7 +79,6 @@ Required slash commands:
 /help
 /model [name]
 /reasoning [low|medium|high]
-/max-steps [number]
 /cwd
 /status
 /clear
@@ -111,7 +109,6 @@ Config shape:
 {
   "model": "solar-pro3-260323",
   "reasoningEffort": "medium",
-  "maxSteps": 10,
   "approvalPolicy": "on-failure",
   "sandbox": "workspace-write",
   "quiet": false
@@ -198,7 +195,7 @@ The workflow loop must:
 - Send a concise system prompt describing Solarcido's role and available tool strategy.
 - Preserve the full tool output in model-visible messages.
 - Print compact tool output summaries to the terminal.
-- Stop only when `finish` is called or `maxSteps` is reached.
+- Stop only when `finish` is called, the user interrupts the process, or an external runtime/API limit is reached.
 - Treat tool execution errors as model-visible results when recovery is possible.
 
 The model should be instructed to:

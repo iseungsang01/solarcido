@@ -32,7 +32,6 @@ async function main(): Promise<void> {
 
   const config = await loadConfig();
   const command = parseCliArgs(argv, {
-    maxSteps: config.maxSteps,
     reasoningEffort: config.reasoningEffort,
     model: config.model,
     approvalPolicy: config.approvalPolicy,
