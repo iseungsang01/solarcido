@@ -4,7 +4,7 @@
 
 ## Quick start
 
-MacOS/Linux (Recommended):
+MacOS/Linux (Recommended, requires Rust/Cargo):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/iseungsang01/solarcido/main/install.sh | bash
@@ -26,8 +26,8 @@ Development install:
 
 ```bash
 npm install
-npm run build
-npm run dev
+npm run build:rust
+npm start
 ```
 
 ## Usage
@@ -43,33 +43,33 @@ solarcido> update README to match the current behavior
 You can also run a single task directly:
 
 ```bash
-solarcido run "refactor the command parser" --cwd . --reasoning medium
+solarcido run "refactor the command parser" --cwd . --reasoning-effort medium
 ```
 
-Persistent defaults are stored in `~/.solarcido/config.json`:
+Rust sessions are saved as JSONL under `<repo>/.solarcido/sessions/`:
 
 ```bash
-solarcido config path
-solarcido config get
-solarcido config get model
-solarcido config set model solar-pro3-260323
+solarcido --resume latest prompt "continue"
+solarcido status
+solarcido init
 ```
 
-Workflow runs write compact session metadata under `~/.solarcido/sessions/`:
+For TypeScript compatibility work, the old implementation is still available
+through the existing npm scripts:
 
 ```bash
-solarcido sessions list
-solarcido sessions show <id>
+npm run build
+node dist/index.js --help
 ```
 
 ## Options
 
 - `--cwd`: working directory
-- `--reasoning`: `low | medium | high`
+- `--reasoning-effort`: `low | medium | high`
 - `--model`: model to use for the coding assistant
-- `--approval-policy`: `never | on-failure | on-request`
-- `--sandbox`: `read-only | workspace-write`
-- `--quiet`: suppress assistant chat messages
+- `--permission-mode`: `read-only | workspace-write | danger-full-access`
+- `--output-format`: `text | json`
+- `--resume`: `latest`, a session id, or a `.jsonl` session path
 
 ## Development
 
@@ -78,6 +78,21 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+## Rust port
+
+The Rust CLI under `crates/` is now the default `solarcido` entrypoint. During
+development, you can still run it with Cargo:
+
+```bash
+cargo run -p solarcido-cli -- --help
+cargo run -p solarcido-cli -- prompt "summarize this repository" --cwd .
+cargo run -p solarcido-cli -- --resume latest prompt "continue"
+```
+
+The npm bin wrapper also targets the Rust CLI, preferring an existing
+`target/release/solarcido` or `target/debug/solarcido` binary and falling back
+to `cargo run -p solarcido-cli --`.
 
 ## Notes
 

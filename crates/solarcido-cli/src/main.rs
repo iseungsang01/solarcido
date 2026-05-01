@@ -1,11 +1,30 @@
 use solarcido_api::{ContentBlockDelta, ReasoningEffort, SolarClient, StreamEvent, DEFAULT_MODEL};
+use solarcido_commands::{
+    render_slash_command_help_json, resolve_slash_command, slash_command_specs, SlashCommand,
+};
 use solarcido_runtime::{
-    default_system_prompt, ConversationRuntime, PermissionMode, PermissionPrompter,
-    PermissionRequest,
+    default_system_prompt, new_session_id, usage::UsageTracker, ConversationRuntime,
+    PermissionMode, PermissionPrompter, PermissionRequest, SessionStore,
 };
 use solarcido_tools::WorkspaceTools;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
+
+const ANSI_RESET: &str = "\x1b[0m";
+const ANSI_DIM: &str = "\x1b[2m";
+const ANSI_CYAN: &str = "\x1b[38;5;87m";
+const ANSI_SLATE: &str = "\x1b[38;5;244m";
+const ANSI_YELLOW_BOLD: &str = "\x1b[38;5;220m\x1b[1m";
+const ANSI_AMBER_BOLD: &str = "\x1b[38;5;214m\x1b[1m";
+const ANSI_CYAN_BOLD: &str = "\x1b[38;5;87m\x1b[1m";
+
+const LOGO_LINES: &[&str] = &[
+    "   _____       __               _     __",
+    "  / ___/____  / /___ __________(_)___/ /___",
+    "  \\__ \\/ __ \\/ / __ `/ ___/ ___/ / __  / __ \\",
+    " ___/ / /_/ / / /_/ / /  / /__/ / /_/ / /_/ /",
+    "/____/\\____/_/\\__,_/_/   \\___/_/\\__,_/\\____/",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
@@ -22,18 +41,41 @@ enum CliAction {
         output_format: OutputFormat,
         permission_mode: PermissionMode,
         reasoning_effort: ReasoningEffort,
+        resume: Option<String>,
     },
     Repl {
         model: String,
         cwd: PathBuf,
         permission_mode: PermissionMode,
         reasoning_effort: ReasoningEffort,
+        resume: Option<String>,
     },
     Status {
         model: String,
         output_format: OutputFormat,
         permission_mode: PermissionMode,
         reasoning_effort: ReasoningEffort,
+    },
+    Sandbox {
+        output_format: OutputFormat,
+        permission_mode: PermissionMode,
+    },
+    Agents {
+        output_format: OutputFormat,
+    },
+    Mcp {
+        output_format: OutputFormat,
+    },
+    Skills {
+        output_format: OutputFormat,
+    },
+    SystemPrompt {
+        output_format: OutputFormat,
+        permission_mode: PermissionMode,
+    },
+    Init {
+        cwd: PathBuf,
+        output_format: OutputFormat,
     },
     Help {
         output_format: OutputFormat,
@@ -52,6 +94,8 @@ async fn main() {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    load_dotenv_if_present();
+
     match parse_args(std::env::args().skip(1).collect())? {
         CliAction::Prompt {
             prompt,
@@ -60,24 +104,203 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             output_format,
             permission_mode,
             reasoning_effort,
-        } => run_prompt(&prompt, &model, cwd, output_format, permission_mode, reasoning_effort)
-            .await?,
+            resume,
+        } => {
+            run_prompt(
+                &prompt,
+                &model,
+                cwd,
+                output_format,
+                permission_mode,
+                reasoning_effort,
+                resume.as_deref(),
+            )
+            .await?;
+        }
         CliAction::Repl {
             model,
             cwd,
             permission_mode,
             reasoning_effort,
-        } => run_repl(model, cwd, permission_mode, reasoning_effort).await?,
+            resume,
+        } => {
+            run_repl(
+                model,
+                cwd,
+                permission_mode,
+                reasoning_effort,
+                resume.as_deref(),
+            )
+            .await?
+        }
         CliAction::Status {
             model,
             output_format,
             permission_mode,
             reasoning_effort,
         } => print_status(&model, output_format, permission_mode, reasoning_effort)?,
+        CliAction::Sandbox {
+            output_format,
+            permission_mode,
+        } => print_sandbox(output_format, permission_mode)?,
+        CliAction::Agents { output_format } => print_agents(output_format)?,
+        CliAction::Mcp { output_format } => print_mcp(output_format)?,
+        CliAction::Skills { output_format } => print_skills(output_format)?,
+        CliAction::SystemPrompt {
+            output_format,
+            permission_mode,
+        } => print_system_prompt(output_format, permission_mode)?,
+        CliAction::Init { cwd, output_format } => run_init(&cwd, output_format)?,
         CliAction::Help { output_format } => print_help(output_format)?,
         CliAction::Version { output_format } => print_version(output_format)?,
     }
     Ok(())
+}
+
+fn load_dotenv_if_present() {
+    let Ok(contents) = std::fs::read_to_string(".env") else {
+        return;
+    };
+
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() || std::env::var_os(key).is_some() {
+            continue;
+        }
+
+        std::env::set_var(key, parse_dotenv_value(value.trim()));
+    }
+}
+
+fn parse_dotenv_value(value: &str) -> String {
+    if value.len() >= 2 {
+        let first = value.as_bytes()[0];
+        let last = value.as_bytes()[value.len() - 1];
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            return value[1..value.len() - 1].to_string();
+        }
+    }
+
+    value.to_string()
+}
+
+fn paint(enabled: bool, style: &str, value: impl AsRef<str>) -> String {
+    let value = value.as_ref();
+    if enabled {
+        format!("{style}{value}{ANSI_RESET}")
+    } else {
+        value.to_string()
+    }
+}
+
+fn print_logo(color_enabled: bool) {
+    println!();
+    for line in LOGO_LINES {
+        println!("{}", paint(color_enabled, ANSI_YELLOW_BOLD, line));
+    }
+    println!();
+}
+
+fn print_shell_header(
+    model: &str,
+    cwd: &std::path::Path,
+    permission_mode: PermissionMode,
+    reasoning_effort: ReasoningEffort,
+    color_enabled: bool,
+) {
+    print_logo(color_enabled);
+    println!(
+        "  {}",
+        paint(color_enabled, ANSI_CYAN_BOLD, "SOLARCIDO CODE")
+    );
+    println!(
+        "  {}",
+        paint(
+            color_enabled,
+            ANSI_SLATE,
+            "Ask for code changes, repo analysis, or execution."
+        )
+    );
+    println!(
+        "  {}",
+        paint(
+            color_enabled,
+            ANSI_SLATE,
+            "Type /help for commands, /exit to quit."
+        )
+    );
+    println!();
+    print_shell_setting("model", model, color_enabled);
+    print_shell_setting("cwd", cwd.display().to_string(), color_enabled);
+    print_shell_setting("reasoning", reasoning_effort.as_str(), color_enabled);
+    print_shell_setting("permission", permission_mode.as_str(), color_enabled);
+    println!();
+}
+
+fn print_shell_setting(label: &str, value: impl AsRef<str>, color_enabled: bool) {
+    println!(
+        "  {}  {}",
+        paint(color_enabled, ANSI_SLATE, format!("{label:<10}")),
+        value.as_ref()
+    );
+}
+
+fn shell_prompt(color_enabled: bool) -> String {
+    format!("{} ", paint(color_enabled, ANSI_AMBER_BOLD, ">>"))
+}
+
+fn format_slash_command_help(color_enabled: bool) -> String {
+    let mut out = String::from("Slash commands:\n");
+    for spec in slash_command_specs() {
+        let command = match spec.argument_hint {
+            Some(hint) => format!("/{} {hint}", spec.name),
+            None => format!("/{}", spec.name),
+        };
+        let aliases = if spec.aliases.is_empty() {
+            String::new()
+        } else {
+            format!(" aliases: /{}", spec.aliases.join(", /"))
+        };
+        out.push_str(&format!(
+            "  {:<38} {}{}\n",
+            paint(color_enabled, ANSI_CYAN, command),
+            paint(color_enabled, ANSI_SLATE, spec.summary),
+            paint(color_enabled, ANSI_DIM, aliases),
+        ));
+    }
+    out
+}
+
+fn format_repl_status(
+    model: &str,
+    permission_mode: PermissionMode,
+    reasoning_effort: ReasoningEffort,
+    turns: u32,
+    color_enabled: bool,
+) -> String {
+    [
+        format_status_line("model", model, color_enabled),
+        format_status_line("permission", permission_mode.as_str(), color_enabled),
+        format_status_line("reasoning", reasoning_effort.as_str(), color_enabled),
+        format_status_line("turns", turns.to_string(), color_enabled),
+    ]
+    .join("\n")
+}
+
+fn format_status_line(label: &str, value: impl AsRef<str>, color_enabled: bool) -> String {
+    format!(
+        "  {}  {}",
+        paint(color_enabled, ANSI_SLATE, format!("{label:<10}")),
+        value.as_ref()
+    )
 }
 
 fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
@@ -86,6 +309,7 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
     let mut output_format = OutputFormat::Text;
     let mut permission_mode = PermissionMode::DangerFullAccess;
     let mut reasoning_effort = ReasoningEffort::Medium;
+    let mut resume = None;
     let mut positionals = Vec::new();
     let mut index = 0usize;
 
@@ -93,18 +317,11 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
         match args[index].as_str() {
             "--help" | "-h" => return Ok(CliAction::Help { output_format }),
             "--version" | "-V" => return Ok(CliAction::Version { output_format }),
-            "--model" => {
+            "--model" | "--model-name" => {
                 index += 1;
                 model = args
                     .get(index)
                     .ok_or("--model requires a value")?
-                    .to_string();
-            }
-            "--model-name" => {
-                index += 1;
-                model = args
-                    .get(index)
-                    .ok_or("--model-name requires a value")?
                     .to_string();
             }
             "--cwd" => {
@@ -113,7 +330,9 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
             }
             "--output-format" => {
                 index += 1;
-                output_format = parse_output_format(args.get(index).ok_or("--output-format requires a value")?)?;
+                output_format = parse_output_format(
+                    args.get(index).ok_or("--output-format requires a value")?,
+                )?;
             }
             value if value.starts_with("--output-format=") => {
                 output_format = parse_output_format(value.trim_start_matches("--output-format="))?;
@@ -121,7 +340,8 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
             "--permission-mode" => {
                 index += 1;
                 permission_mode = PermissionMode::parse(
-                    args.get(index).ok_or("--permission-mode requires a value")?,
+                    args.get(index)
+                        .ok_or("--permission-mode requires a value")?,
                 )
                 .map_err(|error| error.to_string())?;
             }
@@ -131,13 +351,25 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
             "--reasoning-effort" | "--reasoning" => {
                 index += 1;
                 reasoning_effort = ReasoningEffort::parse(
-                    args.get(index).ok_or("--reasoning-effort requires a value")?,
+                    args.get(index)
+                        .ok_or("--reasoning-effort requires a value")?,
                 )
                 .map_err(|error| error.to_string())?;
             }
             "--allowedTools" | "--allowed-tools" => {
                 index += 1;
                 let _ = args.get(index).ok_or("--allowedTools requires a value")?;
+            }
+            "--resume" => {
+                if args
+                    .get(index + 1)
+                    .is_some_and(|value| !value.starts_with('-'))
+                {
+                    index += 1;
+                    resume = Some(args[index].clone());
+                } else {
+                    resume = Some("latest".to_string());
+                }
             }
             other if other.starts_with('-') => return Err(format!("unknown option: {other}")),
             other => positionals.push(other.to_string()),
@@ -151,6 +383,7 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
             cwd,
             permission_mode,
             reasoning_effort,
+            resume,
         });
     }
 
@@ -167,6 +400,7 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
                 output_format,
                 permission_mode,
                 reasoning_effort,
+                resume,
             })
         }
         "status" => Ok(CliAction::Status {
@@ -175,6 +409,18 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
             permission_mode,
             reasoning_effort,
         }),
+        "sandbox" => Ok(CliAction::Sandbox {
+            output_format,
+            permission_mode,
+        }),
+        "agents" => Ok(CliAction::Agents { output_format }),
+        "mcp" => Ok(CliAction::Mcp { output_format }),
+        "skills" => Ok(CliAction::Skills { output_format }),
+        "system-prompt" => Ok(CliAction::SystemPrompt {
+            output_format,
+            permission_mode,
+        }),
+        "init" => Ok(CliAction::Init { cwd, output_format }),
         "help" => Ok(CliAction::Help { output_format }),
         "version" => Ok(CliAction::Version { output_format }),
         other => Err(format!("unknown command: {other}")),
@@ -185,9 +431,15 @@ fn parse_output_format(value: &str) -> Result<OutputFormat, String> {
     match value {
         "text" => Ok(OutputFormat::Text),
         "json" => Ok(OutputFormat::Json),
-        other => Err(format!("invalid output format `{other}`; expected text or json")),
+        other => Err(format!(
+            "invalid output format `{other}`; expected text or json"
+        )),
     }
 }
+
+// ---------------------------------------------------------------------------
+// One-shot prompt
+// ---------------------------------------------------------------------------
 
 async fn run_prompt(
     prompt: &str,
@@ -196,9 +448,18 @@ async fn run_prompt(
     output_format: OutputFormat,
     permission_mode: PermissionMode,
     reasoning_effort: ReasoningEffort,
+    resume: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = SolarClient::from_env()?;
-    let tools = WorkspaceTools::new(cwd.canonicalize()?);
+    let canonical_cwd = cwd.canonicalize()?;
+    let session_store = SessionStore::for_workspace(&canonical_cwd);
+    let loaded = resume
+        .map(|selector| session_store.load(selector))
+        .transpose()?;
+    let session_id = loaded
+        .as_ref()
+        .map_or_else(new_session_id, |snapshot| snapshot.id.clone());
+    let tools = WorkspaceTools::new(&canonical_cwd);
     let mut runtime = ConversationRuntime::new(
         client,
         model,
@@ -207,6 +468,9 @@ async fn run_prompt(
         tools,
         permission_mode,
     );
+    if let Some(snapshot) = loaded {
+        runtime = runtime.with_session(snapshot.session());
+    }
     let mut prompter = CliPermissionPrompter;
     let use_streaming = output_format == OutputFormat::Text;
 
@@ -224,6 +488,7 @@ async fn run_prompt(
     } else {
         runtime.run_turn(prompt, Some(&mut prompter)).await?
     };
+    let session_path = session_store.save(&runtime.snapshot(&session_id))?;
 
     match output_format {
         OutputFormat::Text => {
@@ -236,11 +501,14 @@ async fn run_prompt(
                 summary.usage.completion_tokens,
                 summary.usage.total_tokens()
             );
+            eprintln!("[session] {}", session_path.display());
         }
         OutputFormat::Json => println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "type": "result",
+                "session_id": session_id,
+                "session_path": session_path.to_string_lossy(),
                 "assistant": summary.assistant_text,
                 "iterations": summary.iterations,
                 "usage": {
@@ -254,32 +522,56 @@ async fn run_prompt(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Interactive REPL
+// ---------------------------------------------------------------------------
+
 async fn run_repl(
     model: String,
     cwd: PathBuf,
     permission_mode: PermissionMode,
     reasoning_effort: ReasoningEffort,
+    resume: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("solarcido");
-    println!("model: {model}");
-    println!("cwd: {}", cwd.display());
-    println!("permission: {}", permission_mode.as_str());
-    println!("Type /help for commands, /exit to quit.");
+    let color_enabled = io::stdout().is_terminal();
+    print_shell_header(
+        &model,
+        &cwd,
+        permission_mode,
+        reasoning_effort,
+        color_enabled,
+    );
 
     let client = SolarClient::from_env()?;
-    let tools = WorkspaceTools::new(cwd.canonicalize()?);
+    let canonical_cwd = cwd.canonicalize()?;
+    let session_store = SessionStore::for_workspace(&canonical_cwd);
+    let loaded = resume
+        .map(|selector| session_store.load(selector))
+        .transpose()?;
+    let session_id = loaded
+        .as_ref()
+        .map_or_else(new_session_id, |snapshot| snapshot.id.clone());
+    let tools = WorkspaceTools::new(&canonical_cwd);
     let mut runtime = ConversationRuntime::new(
         client,
-        model,
+        &model,
         reasoning_effort,
         default_system_prompt(permission_mode),
         tools,
         permission_mode,
     );
+    if let Some(snapshot) = loaded {
+        runtime = runtime.with_session(snapshot.session());
+        print_shell_setting("session", format!("resumed {session_id}"), color_enabled);
+    } else {
+        print_shell_setting("session", &session_id, color_enabled);
+    }
+    println!();
     let mut prompter = CliPermissionPrompter;
+    let mut usage_tracker = UsageTracker::new();
 
     loop {
-        print!("> ");
+        print!("{}", shell_prompt(color_enabled));
         io::stdout().flush()?;
         let mut line = String::new();
         if io::stdin().read_line(&mut line)? == 0 {
@@ -289,19 +581,37 @@ async fn run_repl(
         if trimmed.is_empty() {
             continue;
         }
-        match trimmed {
-            "/exit" | "/quit" => break,
-            "/help" | "/" => {
-                println!("/help /status /exit /quit");
-                continue;
-            }
-            "/status" => {
-                println!("permission: {}", permission_mode.as_str());
-                println!("reasoning: {}", reasoning_effort.as_str());
-                continue;
-            }
-            _ => {}
+
+        // Slash command dispatch.
+        if trimmed == "/" {
+            println!("{}", format_slash_command_help(color_enabled));
+            continue;
         }
+
+        if trimmed.starts_with('/') {
+            if let Some(cmd) = SlashCommand::parse(trimmed) {
+                let handled = handle_slash_command(
+                    &cmd.name,
+                    &cmd.args,
+                    &model,
+                    permission_mode,
+                    reasoning_effort,
+                    &usage_tracker,
+                    color_enabled,
+                );
+                match handled {
+                    SlashResult::Output(text) => {
+                        println!("{text}");
+                        continue;
+                    }
+                    SlashResult::Exit => break,
+                    SlashResult::Unhandled => {
+                        // Fall through to send as prompt.
+                    }
+                }
+            }
+        }
+
         let summary = runtime
             .run_turn_streaming(trimmed, Some(&mut prompter), |event| {
                 if let StreamEvent::ContentBlockDelta(ref delta) = event {
@@ -312,12 +622,120 @@ async fn run_repl(
                 }
             })
             .await?;
+
+        usage_tracker.record(solarcido_runtime::usage::TokenUsage {
+            input_tokens: summary.usage.prompt_tokens,
+            output_tokens: summary.usage.completion_tokens,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        });
+
         if !summary.assistant_text.is_empty() {
             println!();
         }
+        let session_path = session_store.save(&runtime.snapshot(&session_id))?;
+        eprintln!("[session] {}", session_path.display());
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Slash command handler
+// ---------------------------------------------------------------------------
+
+enum SlashResult {
+    Output(String),
+    Exit,
+    Unhandled,
+}
+
+fn handle_slash_command(
+    name: &str,
+    args: &[String],
+    model: &str,
+    permission_mode: PermissionMode,
+    reasoning_effort: ReasoningEffort,
+    usage_tracker: &UsageTracker,
+    color_enabled: bool,
+) -> SlashResult {
+    // Resolve through the registry so aliases work.
+    let canonical = resolve_slash_command(&format!("/{name}"))
+        .map(|spec| spec.name)
+        .unwrap_or(name);
+
+    match canonical {
+        "help" => SlashResult::Output(format_slash_command_help(color_enabled)),
+        "status" => SlashResult::Output(format_repl_status(
+            model,
+            permission_mode,
+            reasoning_effort,
+            usage_tracker.turns(),
+            color_enabled,
+        )),
+        "sandbox" => SlashResult::Output(format!(
+            "permission_mode: {}\nos_sandbox: not available",
+            permission_mode.as_str()
+        )),
+        "compact" => SlashResult::Output("session compaction not yet implemented".to_string()),
+        "model" => {
+            if args.is_empty() {
+                SlashResult::Output(format!("current model: {model}"))
+            } else {
+                SlashResult::Output(format!(
+                    "model switching in REPL not yet implemented (requested: {})",
+                    args[0]
+                ))
+            }
+        }
+        "permissions" => {
+            if args.is_empty() {
+                SlashResult::Output(format!(
+                    "current permission mode: {}",
+                    permission_mode.as_str()
+                ))
+            } else {
+                SlashResult::Output(format!(
+                    "permission switching in REPL not yet implemented (requested: {})",
+                    args[0]
+                ))
+            }
+        }
+        "clear" => {
+            // Print ANSI clear; actual session reset deferred.
+            SlashResult::Output("\x1b[2J\x1b[H".to_string())
+        }
+        "cost" => {
+            let cu = usage_tracker.cumulative_usage();
+            let lines = cu.summary_lines_for_model("session", Some(model));
+            SlashResult::Output(lines.join("\n"))
+        }
+        "resume" => SlashResult::Output("session resume not yet implemented".to_string()),
+        "config" => {
+            if args.is_empty() {
+                SlashResult::Output("config inspection not yet implemented".to_string())
+            } else {
+                SlashResult::Output(format!("config section `{}` not yet implemented", args[0]))
+            }
+        }
+        "mcp" => SlashResult::Output("MCP server management not yet implemented".to_string()),
+        "memory" => SlashResult::Output("memory inspection not yet implemented".to_string()),
+        "init" => SlashResult::Output("use `solarcido init` from the CLI instead".to_string()),
+        "diff" => SlashResult::Output("diff display not yet implemented".to_string()),
+        "version" => SlashResult::Output(env!("CARGO_PKG_VERSION").to_string()),
+        "session" => SlashResult::Output("session management not yet implemented".to_string()),
+        "plugin" => SlashResult::Output("plugin management not yet implemented".to_string()),
+        "agents" => SlashResult::Output("agent listing not yet implemented".to_string()),
+        "skills" => SlashResult::Output("skill management not yet implemented".to_string()),
+        "doctor" => SlashResult::Output("diagnostics not yet implemented".to_string()),
+        "hooks" => SlashResult::Output("hooks not yet implemented".to_string()),
+        "exit" => SlashResult::Exit,
+        _ => SlashResult::Unhandled,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Direct CLI subcommands
+// ---------------------------------------------------------------------------
 
 fn print_status(
     model: &str,
@@ -346,20 +764,183 @@ fn print_status(
     Ok(())
 }
 
-fn print_help(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+fn print_sandbox(
+    output_format: OutputFormat,
+    permission_mode: PermissionMode,
+) -> Result<(), Box<dyn std::error::Error>> {
     match output_format {
         OutputFormat::Text => {
+            println!("Solarcido sandbox status");
+            println!("permission_mode: {}", permission_mode.as_str());
+            println!("os_sandbox: not available");
             println!(
-                "solarcido [OPTIONS] [COMMAND]\n\nCommands:\n  prompt <text>        Run one prompt\n  run <text>           Compatibility alias for prompt\n  status               Print runtime status\n  help                 Print help\n  version              Print version\n\nOptions:\n  --model MODEL\n  --output-format text|json\n  --permission-mode read-only|workspace-write|danger-full-access\n  --dangerously-skip-permissions\n  --reasoning-effort low|medium|high\n  --cwd PATH\n  --allowedTools TOOLS\n  --version, -V\n  --help, -h"
+                "note: OS-level sandboxing is not yet implemented. \
+                 Permission enforcement is handled by the permission mode."
             );
         }
         OutputFormat::Json => println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "commands": ["prompt", "run", "status", "help", "version"],
-                "options": ["--model", "--output-format", "--permission-mode", "--dangerously-skip-permissions", "--reasoning-effort", "--cwd", "--allowedTools"]
+                "permission_mode": permission_mode.as_str(),
+                "os_sandbox": false,
+                "note": "OS-level sandboxing not yet implemented"
             }))?
         ),
+    }
+    Ok(())
+}
+
+fn print_agents(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+    match output_format {
+        OutputFormat::Text => {
+            println!("Solarcido agents");
+            println!("No agents configured. Agent support is not yet implemented.");
+        }
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "agents": [],
+                "note": "Agent support not yet implemented"
+            }))?
+        ),
+    }
+    Ok(())
+}
+
+fn print_mcp(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+    match output_format {
+        OutputFormat::Text => {
+            println!("Solarcido MCP servers");
+            println!("No MCP servers configured. MCP support is not yet implemented.");
+        }
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "servers": [],
+                "note": "MCP support not yet implemented"
+            }))?
+        ),
+    }
+    Ok(())
+}
+
+fn print_skills(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+    match output_format {
+        OutputFormat::Text => {
+            println!("Solarcido skills");
+            println!("No skills installed. Skill support is not yet implemented.");
+        }
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "skills": [],
+                "note": "Skill support not yet implemented"
+            }))?
+        ),
+    }
+    Ok(())
+}
+
+fn print_system_prompt(
+    output_format: OutputFormat,
+    permission_mode: PermissionMode,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let prompt = default_system_prompt(permission_mode);
+    match output_format {
+        OutputFormat::Text => println!("{prompt}"),
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "system_prompt": prompt
+            }))?
+        ),
+    }
+    Ok(())
+}
+
+fn run_init(
+    cwd: &std::path::Path,
+    output_format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let solarcido_dir = cwd.join(".solarcido");
+    if !solarcido_dir.exists() {
+        std::fs::create_dir_all(&solarcido_dir)?;
+    }
+    std::fs::create_dir_all(solarcido_dir.join("sessions"))?;
+
+    let config_file = cwd.join(".solarcido.json");
+    if !config_file.exists() {
+        std::fs::write(
+            &config_file,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "$schema": "https://solarcido.dev/schema/config.json",
+                "model": DEFAULT_MODEL
+            }))?,
+        )?;
+    }
+
+    match output_format {
+        OutputFormat::Text => {
+            println!("Initialized Solarcido in {}", cwd.display());
+            println!(
+                "Created .solarcido/ directory, sessions directory, and .solarcido.json config."
+            );
+        }
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "initialized": true,
+                "cwd": cwd.to_string_lossy(),
+                "config": ".solarcido.json",
+                "directory": ".solarcido/",
+                "sessions": ".solarcido/sessions/"
+            }))?
+        ),
+    }
+    Ok(())
+}
+
+fn print_help(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+    match output_format {
+        OutputFormat::Text => {
+            println!(
+                "solarcido [OPTIONS] [COMMAND]\n\n\
+                 Commands:\n\
+                 \x20 prompt <text>        Run one prompt\n\
+                 \x20 run <text>           Compatibility alias for prompt\n\
+                 \x20 status               Print runtime status\n\
+                 \x20 sandbox              Print sandbox isolation status\n\
+                 \x20 agents               List configured agents\n\
+                 \x20 mcp                  List MCP servers\n\
+                 \x20 skills               List installed skills\n\
+                 \x20 system-prompt        Print the active system prompt\n\
+                 \x20 init                 Initialize Solarcido for this repository\n\
+                 \x20 help                 Print help\n\
+                 \x20 version              Print version\n\n\
+                 Options:\n\
+                 \x20 --model MODEL\n\
+                 \x20 --output-format text|json\n\
+                 \x20 --permission-mode read-only|workspace-write|danger-full-access\n\
+                 \x20 --dangerously-skip-permissions\n\
+                 \x20 --reasoning-effort low|medium|high\n\
+                 \x20 --resume [SESSION.jsonl|session-id|latest]\n\
+                 \x20 --cwd PATH\n\
+                 \x20 --allowedTools TOOLS\n\
+                 \x20 --version, -V\n\
+                 \x20 --help, -h"
+            );
+        }
+        OutputFormat::Json => {
+            let commands_json = render_slash_command_help_json();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "commands": ["prompt", "run", "status", "sandbox", "agents", "mcp", "skills", "system-prompt", "init", "help", "version"],
+                    "options": ["--model", "--output-format", "--permission-mode", "--dangerously-skip-permissions", "--reasoning-effort", "--resume", "--cwd", "--allowedTools"],
+                    "slash_commands": commands_json["commands"]
+                }))?
+            );
+        }
     }
     Ok(())
 }
@@ -376,6 +957,10 @@ fn print_version(output_format: OutputFormat) -> Result<(), Box<dyn std::error::
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Permission prompter
+// ---------------------------------------------------------------------------
 
 struct CliPermissionPrompter;
 
@@ -394,4 +979,3 @@ impl PermissionPrompter for CliPermissionPrompter {
             && matches!(answer.trim(), "y" | "Y" | "yes" | "YES")
     }
 }
-

@@ -465,15 +465,19 @@ Current workspace:
 - `crates/api` has a Solar chat completion client with SSE streaming, an
   incremental SSE frame parser (`sse.rs`), streaming chunk types, and a
   `SolarStream` that yields high-level `StreamEvent` values.
-- `crates/runtime` has an in-memory conversation loop with permission policy
-  and both non-streaming (`run_turn`) and streaming (`run_turn_streaming`)
-  turn execution paths.
+- `crates/runtime` has a conversation loop with permission policy,
+  non-streaming (`run_turn`) and streaming (`run_turn_streaming`) turn
+  execution paths, usage/cost tracking, and JSONL session snapshots.
 - `crates/tools` has basic workspace tools.
-- `crates/solarcido-cli` has a CLI and REPL with real-time streaming output.
+- `crates/solarcido-cli` is the default `solarcido` entrypoint and has a CLI
+  and REPL with real-time streaming output, workspace-local session saves, and
+  `--resume latest|session-id|path`.
 
 Current gap:
 
-- The existing Rust crates are a prototype, not a full claw-style port.
+- The existing Rust crates are still short of a full claw-style port.
+- Phase 3 still needs config-backed system prompt assembly and broader
+  claw-style runtime state before it can be considered complete.
 - The next work should import the broader `claw-rust` crate boundaries and
   behavior rather than continue growing the prototype shape.
 

@@ -1,6 +1,6 @@
 # Parity Status — Solarcido Rust Port
 
-Last updated: 2026-05-01
+Last updated: 2026-05-02
 
 Adapted from `claw-rust/PARITY.md`. This file tracks behavioral parity between
 the Solarcido Rust workspace (`crates/`) and the reference `claw-rust/`
@@ -18,10 +18,10 @@ Target layout from `docs/RUST_PORT.md`:
 | `compat-harness` | skeleton | Types + stub `extract_manifest` — deferred to Phase 8 |
 | `mock-solar-service` | partial | Scenario types, completion/SSE builders, builtin scenarios — HTTP server stub only |
 | `plugins` | skeleton | Metadata types, stub registry/manager — deferred to Phase 7 |
-| `runtime` | real | ConversationRuntime, permission policy, streaming + non-streaming turn execution |
-| `solarcido-cli` | real | CLI argument parsing, one-shot prompt, REPL with streaming, status/help/version |
+| `runtime` | real | ConversationRuntime, permission policy, streaming + non-streaming turn execution, JSONL session snapshots, usage/cost tracking (7 tests) |
+| `solarcido-cli` | real | Default `solarcido` entrypoint, CLI parsing, one-shot prompt, REPL with streaming, `--resume`, full slash dispatch, 11 CLI subcommands |
 | `telemetry` | real | Session tracer, JSONL + memory sinks, token usage, event types |
-| `tools` | real | 6 core tools: bash, read_file, write_file, edit_file, glob_search, grep_search |
+| `tools` | real | 11 tools: bash, read/write/edit_file, glob/grep_search, Sleep, StructuredOutput, SendUserMessage, ToolSearch, TodoWrite |
 
 ## Tool Surface
 
@@ -35,6 +35,11 @@ Target layout from `docs/RUST_PORT.md`:
 | **edit_file** | `tools::WorkspaceTools` | old/new string replacement, replace_all, ambiguity rejection — good parity |
 | **glob_search** | `tools::WorkspaceTools` | glob pattern matching, workspace scoping, truncation at 100 — good parity |
 | **grep_search** | `tools::WorkspaceTools` | regex search, glob filter, output modes (files/content/count), case insensitive — good parity |
+| **Sleep** | `tools::WorkspaceTools` | duration_ms with 120s max cap — good parity |
+| **StructuredOutput** | `tools::WorkspaceTools` | passthrough JSON data — good parity |
+| **SendUserMessage** | `tools::WorkspaceTools` | message + status level — good parity |
+| **ToolSearch** | `tools::WorkspaceTools` | keyword search across registered tool specs — good parity |
+| **TodoWrite** | `tools::WorkspaceTools` | accept/return todo list (no persistence yet) — moderate parity |
 
 ### Not Yet Implemented
 
@@ -42,12 +47,7 @@ Target layout from `docs/RUST_PORT.md`:
 |------|--------|----------|
 | **WebFetch** | not started | Phase 4 |
 | **WebSearch** | not started | Phase 4 |
-| **TodoWrite** | not started | Phase 4 |
 | **NotebookEdit** | not started | Phase 4 |
-| **ToolSearch** | not started | Phase 4 |
-| **Sleep** | not started | Phase 4 |
-| **SendUserMessage** | not started | Phase 4 |
-| **StructuredOutput** | not started | Phase 4 |
 | **Config** | not started | Phase 4 |
 | **Agent** | not started | Phase 4 |
 | **TaskCreate** | not started | Phase 4 |
@@ -69,21 +69,25 @@ Target layout from `docs/RUST_PORT.md`:
 | **REPL** | not started | Phase 4 |
 | **PowerShell** | not started | Phase 4 |
 
-## Slash Commands: 22 specs / 3 real handlers
+## Slash Commands: 22 specs / 22 wired handlers
 
-All 22 slash command specs are registered in `crates/commands` with name,
-aliases, summary, and argument hints. Only 3 have real REPL handlers in
-`solarcido-cli`:
+All 22 slash command specs are registered in `crates/commands` and all 22 have
+REPL dispatch handlers in `solarcido-cli`. Real handlers with functional output:
 
-- `/help` — prints minimal command list
-- `/status` — prints permission mode and reasoning effort
+- `/help` — renders full slash command help from registry
+- `/status` — shows model, permission mode, reasoning effort, turns
+- `/sandbox` — shows permission mode and OS sandbox status
+- `/model [name]` — shows current model (switching deferred)
+- `/permissions [mode]` — shows current mode (switching deferred)
+- `/clear` — clears terminal via ANSI escape
+- `/cost` — shows cumulative token usage with cost estimate
+- `/version` — prints version
 - `/exit` (`/quit`) — exits the REPL
 
-The remaining 19 specs are registered but have no handler logic yet:
+Stub handlers (return "not yet implemented" messages):
 
-`/sandbox`, `/compact`, `/model`, `/permissions`, `/clear`, `/cost`, `/resume`,
-`/config`, `/mcp`, `/memory`, `/init`, `/diff`, `/version`, `/session`,
-`/plugin`, `/agents`, `/skills`, `/doctor`, `/hooks`
+`/compact`, `/resume`, `/config`, `/mcp`, `/memory`, `/init`, `/diff`,
+`/session`, `/plugin`, `/agents`, `/skills`, `/doctor`, `/hooks`
 
 ## CLI Commands
 
@@ -92,29 +96,37 @@ The remaining 19 specs are registered but have no handler logic yet:
 | `prompt <text>` | real | One-shot with streaming output |
 | `run <text>` | real | Compatibility alias for prompt |
 | `status` | real | Text + JSON output |
-| `help` | real | Text + JSON output |
+| `help` | real | Text + JSON output, includes slash command JSON |
 | `version` | real | Text + JSON output |
-| `sandbox` | not started | Phase 5 |
-| `agents` | not started | Phase 5 |
-| `mcp` | not started | Phase 5 |
-| `skills` | not started | Phase 5 |
-| `system-prompt` | not started | Phase 5 |
-| `init` | not started | Phase 5 |
+| `sandbox` | real | Text + JSON output with permission mode and OS sandbox note |
+| `agents` | real | Text + JSON output (stub: no agents configured) |
+| `mcp` | real | Text + JSON output (stub: no servers configured) |
+| `skills` | real | Text + JSON output (stub: no skills installed) |
+| `system-prompt` | real | Text + JSON output, prints active system prompt |
+| `init` | real | Creates `.solarcido/` dir and `.solarcido.json` config |
+
+Global option status:
+
+- `--resume [SESSION.jsonl|session-id|latest]` is real for one-shot prompt and
+  REPL startup. Sessions are stored under `<repo>/.solarcido/sessions/`.
+- `package.json` and `install.sh` now route `solarcido` to the Rust binary by
+  default. The TypeScript CLI remains available through `node dist/index.js`
+  for compatibility work.
 
 ## Runtime Capabilities
 
 | Capability | Status | Notes |
 |------------|--------|-------|
-| Multi-turn session state | real | In-memory only |
-| Streaming assistant output | real | SSE frame parser + SolarStream |
+| Multi-turn session state | real | In-memory and JSONL snapshot-backed |
+| Streaming assistant output | real | SSE frame parser + SolarStream; tool-call JSON deltas are accumulated before execution |
 | Tool-call loop (multi-tool per turn) | real | Up to 128 iterations |
 | Structured tool results | real | Fed back to model |
 | Permission enforcement | real | 3 modes + interactive prompter |
-| Session persistence and resume | not started | Phase 3/6 |
+| Session persistence and resume | real | Workspace-local JSONL snapshots, `latest` pointer, `--resume latest|id|path` |
 | Config loading and merge precedence | not started | Phase 6 |
 | MCP server lifecycle | not started | Phase 7 |
 | Plugin and hook integration | not started | Phase 7 |
-| Usage and cost accounting | partial | Token counts tracked per turn; no cost calculation |
+| Usage and cost accounting | real | TokenUsage, ModelPricing, UsageCostEstimate, UsageTracker with cumulative tracking and cost summary lines (5 tests) |
 | System prompt assembly | partial | Static prompt only; no memory/config/tool injection |
 
 ## Permission and Sandbox
@@ -136,8 +148,9 @@ The remaining 19 specs are registered but have no handler logic yet:
 | `~/.solarcido/` state directory | not started |
 | `~/.solarcido/config.json` | not started |
 | `~/.solarcido/sessions/` | not started |
-| `<repo>/.solarcido/` | not started |
-| `<repo>/.solarcido.json` | not started |
+| `<repo>/.solarcido/` | real | Created by `solarcido init` |
+| `<repo>/.solarcido/sessions/` | real | Created by `solarcido init` and prompt/REPL session saves |
+| `<repo>/.solarcido.json` | real | Created by `solarcido init` with default model |
 | Config merge precedence | not started |
 
 ## Mock Parity Harness
@@ -177,7 +190,7 @@ The remaining 19 specs are registered but have no handler logic yet:
 | JSONL file sink | real |
 | Memory sink (tests) | real |
 | Token usage tracking | real |
-| Cost calculation | not started |
+| Cost calculation | real | ModelPricing with Solar tier, per-model pricing lookup, USD formatting |
 | Analytics events | types defined, no emitter |
 
 ## Provider Contract
@@ -200,9 +213,9 @@ The remaining 19 specs are registered but have no handler logic yet:
 | 0 — Freeze Decisions | Lock porting contract | complete |
 | 1 — Workspace Reshape | Match reference crate boundaries | complete |
 | 2 — Solar API Adapter | Provider layer with Solar behavior | complete |
-| 3 — Runtime Core | Replace prototype with claw-style runtime | partial |
-| 4 — Tools and Permissions | Real local coding-agent parity | partial (6/40 tools) |
-| 5 — CLI and REPL Parity | Binary feels like claw with Solarcido branding | partial |
+| 3 — Runtime Core | Replace prototype with claw-style runtime | partial (session persistence/resume and usage/cost done; config-backed prompt assembly pending) |
+| 4 — Tools and Permissions | Real local coding-agent parity | partial (11/40 tools) |
+| 5 — CLI and REPL Parity | Binary feels like claw with Solarcido branding | partial (11 CLI commands, 22/22 slash handlers wired) |
 | 6 — Config, Sessions, Memory | Repeated local use stable | not started |
 | 7 — MCP, Plugins, Hooks, Skills | Extension system | not started |
 | 8 — Mock Parity Harness | Deterministic scenario proof | not started |

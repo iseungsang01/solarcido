@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-const MANIFEST_RELATIVE_PATH: &str = ".solarcido-plugin/plugin.json";
+pub const MANIFEST_RELATIVE_PATH: &str = ".solarcido-plugin/plugin.json";
 
 /// Kind of a plugin installation source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,8 +64,12 @@ impl PluginHooks {
     #[must_use]
     pub fn merged_with(&self, other: &Self) -> Self {
         let mut merged = self.clone();
-        merged.pre_tool_use.extend(other.pre_tool_use.iter().cloned());
-        merged.post_tool_use.extend(other.post_tool_use.iter().cloned());
+        merged
+            .pre_tool_use
+            .extend(other.pre_tool_use.iter().cloned());
+        merged
+            .post_tool_use
+            .extend(other.post_tool_use.iter().cloned());
         merged
             .post_tool_use_failure
             .extend(other.post_tool_use_failure.iter().cloned());

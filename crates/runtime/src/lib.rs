@@ -1,10 +1,13 @@
+pub mod session;
 pub mod usage;
 
 use serde_json::Value;
+pub use session::{new_session_id, Session, SessionSnapshot, SessionStore};
 use solarcido_api::{
-    InputContentBlock, InputMessage, MessageRequest, OutputContentBlock, ReasoningEffort,
-    SolarClient, StreamEvent, ToolDefinition, Usage,
+    ContentBlockDelta, InputContentBlock, InputMessage, MessageRequest, OutputContentBlock,
+    ReasoningEffort, SolarClient, StreamEvent, ToolDefinition, Usage,
 };
+use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -182,11 +185,6 @@ pub trait ToolExecutor {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Session {
-    pub messages: Vec<InputMessage>,
-}
-
-#[derive(Debug, Clone, Default)]
 pub struct TurnSummary {
     pub assistant_text: String,
     pub tool_results: Vec<(String, String)>,
@@ -218,13 +216,10 @@ where
         tool_executor: T,
         permission_mode: PermissionMode,
     ) -> Self {
-        let permission_policy = tool_executor
-            .permission_specs()
-            .into_iter()
-            .fold(
-                PermissionPolicy::new(permission_mode),
-                |policy, (tool, mode)| policy.with_tool_requirement(tool, mode),
-            );
+        let permission_policy = tool_executor.permission_specs().into_iter().fold(
+            PermissionPolicy::new(permission_mode),
+            |policy, (tool, mode)| policy.with_tool_requirement(tool, mode),
+        );
         Self {
             client,
             model: model.into(),
@@ -235,6 +230,33 @@ where
             permission_policy,
             max_iterations: 128,
         }
+    }
+
+    #[must_use]
+    pub fn with_session(mut self, session: Session) -> Self {
+        self.session = session;
+        self
+    }
+
+    #[must_use]
+    pub fn session(&self) -> &Session {
+        &self.session
+    }
+
+    #[must_use]
+    pub fn message_count(&self) -> usize {
+        self.session.messages.len()
+    }
+
+    #[must_use]
+    pub fn snapshot(&self, id: impl Into<String>) -> SessionSnapshot {
+        SessionSnapshot::new(
+            id,
+            self.model.clone(),
+            self.reasoning_effort.as_str(),
+            self.system_prompt.clone(),
+            self.session.messages.clone(),
+        )
     }
 
     fn build_request(&self) -> MessageRequest {
@@ -307,9 +329,7 @@ where
             // Record assistant message in session.
             let mut assistant_blocks: Vec<InputContentBlock> = Vec::new();
             if !content.is_empty() {
-                assistant_blocks.push(InputContentBlock::Text {
-                    text: content,
-                });
+                assistant_blocks.push(InputContentBlock::Text { text: content });
             }
             for (id, name, input) in &tool_uses {
                 assistant_blocks.push(InputContentBlock::ToolUse {
@@ -333,17 +353,13 @@ where
                 let p = prompter
                     .as_mut()
                     .map(|r| &mut **r as &mut dyn PermissionPrompter);
-                let output =
-                    match self
-                        .permission_policy
-                        .authorize(&name, &args_str, p)
-                    {
-                        PermissionOutcome::Allow => self
-                            .tool_executor
-                            .execute(&name, &input)
-                            .unwrap_or_else(|e| format!("ERROR: {e}")),
-                        PermissionOutcome::Deny { reason } => format!("ERROR: {reason}"),
-                    };
+                let output = match self.permission_policy.authorize(&name, &args_str, p) {
+                    PermissionOutcome::Allow => self
+                        .tool_executor
+                        .execute(&name, &input)
+                        .unwrap_or_else(|e| format!("ERROR: {e}")),
+                    PermissionOutcome::Deny { reason } => format!("ERROR: {reason}"),
+                };
                 summary.tool_results.push((name.clone(), output.clone()));
                 self.session
                     .messages
@@ -383,7 +399,7 @@ where
                 .map_err(|e| RuntimeError::new(e.to_string()))?;
 
             let mut content = String::new();
-            let mut tool_uses: Vec<(String, String, Value)> = Vec::new();
+            let mut tool_uses: BTreeMap<u32, StreamingToolUse> = BTreeMap::new();
 
             loop {
                 match stream
@@ -394,32 +410,36 @@ where
                     Some(ref event) => {
                         on_event(event);
                         match event {
-                            StreamEvent::ContentBlockDelta(delta_event) => {
-                                if let solarcido_api::ContentBlockDelta::TextDelta {
-                                    text,
-                                } = &delta_event.delta
-                                {
-                                    content.push_str(text);
-                                }
-                            }
                             StreamEvent::ContentBlockStart(start) => {
                                 if let OutputContentBlock::ToolUse { id, name, .. } =
                                     &start.content_block
                                 {
-                                    // Will be filled by InputJsonDelta events.
-                                    tool_uses.push((
-                                        id.clone(),
-                                        name.clone(),
-                                        Value::Object(Default::default()),
-                                    ));
+                                    tool_uses.insert(
+                                        start.index,
+                                        StreamingToolUse {
+                                            id: id.clone(),
+                                            name: name.clone(),
+                                            input_json: String::new(),
+                                        },
+                                    );
+                                }
+                            }
+                            StreamEvent::ContentBlockDelta(delta_event) => {
+                                if let ContentBlockDelta::TextDelta { text } = &delta_event.delta {
+                                    content.push_str(text);
+                                } else if let ContentBlockDelta::InputJsonDelta { partial_json } =
+                                    &delta_event.delta
+                                {
+                                    if let Some(tool_use) = tool_uses.get_mut(&delta_event.index) {
+                                        tool_use.input_json.push_str(partial_json);
+                                    }
                                 }
                             }
                             StreamEvent::ContentBlockStop(_) => {
                                 // Finalize tool call arguments from accumulated JSON deltas.
                             }
                             StreamEvent::MessageDelta(msg_delta) => {
-                                summary.usage.prompt_tokens +=
-                                    msg_delta.usage.prompt_tokens;
+                                summary.usage.prompt_tokens += msg_delta.usage.prompt_tokens;
                                 summary.usage.completion_tokens +=
                                     msg_delta.usage.completion_tokens;
                             }
@@ -429,6 +449,17 @@ where
                     None => break,
                 }
             }
+
+            let tool_uses = tool_uses
+                .into_values()
+                .map(|tool_use| {
+                    (
+                        tool_use.id,
+                        tool_use.name,
+                        parse_streaming_tool_input(&tool_use.input_json),
+                    )
+                })
+                .collect::<Vec<_>>();
 
             if !content.is_empty() {
                 if !summary.assistant_text.is_empty() {
@@ -440,9 +471,7 @@ where
             // Record assistant message.
             let mut assistant_blocks: Vec<InputContentBlock> = Vec::new();
             if !content.is_empty() {
-                assistant_blocks.push(InputContentBlock::Text {
-                    text: content,
-                });
+                assistant_blocks.push(InputContentBlock::Text { text: content });
             }
             for (id, name, input) in &tool_uses {
                 assistant_blocks.push(InputContentBlock::ToolUse {
@@ -465,23 +494,35 @@ where
                 let p = prompter
                     .as_mut()
                     .map(|r| &mut **r as &mut dyn PermissionPrompter);
-                let output =
-                    match self
-                        .permission_policy
-                        .authorize(&name, &args_str, p)
-                    {
-                        PermissionOutcome::Allow => self
-                            .tool_executor
-                            .execute(&name, &input)
-                            .unwrap_or_else(|e| format!("ERROR: {e}")),
-                        PermissionOutcome::Deny { reason } => format!("ERROR: {reason}"),
-                    };
+                let output = match self.permission_policy.authorize(&name, &args_str, p) {
+                    PermissionOutcome::Allow => self
+                        .tool_executor
+                        .execute(&name, &input)
+                        .unwrap_or_else(|e| format!("ERROR: {e}")),
+                    PermissionOutcome::Deny { reason } => format!("ERROR: {reason}"),
+                };
                 summary.tool_results.push((name.clone(), output.clone()));
                 self.session
                     .messages
                     .push(InputMessage::user_tool_result(id, output, false));
             }
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StreamingToolUse {
+    id: String,
+    name: String,
+    input_json: String,
+}
+
+fn parse_streaming_tool_input(input_json: &str) -> Value {
+    if input_json.trim().is_empty() {
+        Value::Object(Default::default())
+    } else {
+        serde_json::from_str(input_json)
+            .unwrap_or_else(|_| serde_json::json!({ "raw": input_json }))
     }
 }
 

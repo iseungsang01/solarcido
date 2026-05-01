@@ -18,8 +18,8 @@ need() {
   fi
 }
 
-need node
-need npm
+need cargo
+need rustc
 need tar
 
 if [ -z "$INSTALL_DIR" ] || [ "$INSTALL_DIR" = "/" ] || [ "$INSTALL_DIR" = "$HOME" ]; then
@@ -42,12 +42,12 @@ tar -xzf "$TMP_DIR/solarcido.tar.gz" -C "$TMP_DIR"
 cp -R "$TMP_DIR"/solarcido-main/. "$INSTALL_DIR"/
 
 cd "$INSTALL_DIR"
-npm install
-npm run build
+HOST_TARGET="$(rustc -vV | awk '/^host:/ { print $2 }')"
+cargo build --release -p solarcido-cli --target "$HOST_TARGET"
 
 cat > "$BIN_DIR/solarcido" <<SH
 #!/usr/bin/env sh
-exec node "$INSTALL_DIR/dist/index.js" "\$@"
+exec "$INSTALL_DIR/target/$HOST_TARGET/release/solarcido" "\$@"
 SH
 chmod +x "$BIN_DIR/solarcido"
 
