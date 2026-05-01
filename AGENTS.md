@@ -4,7 +4,7 @@ These instructions apply to the whole repository.
 
 ## Project Shape
 
-Solarcido is a TypeScript CLI coding assistant built on Upstage Solar through the OpenAI-compatible client.
+Solarcido is a TypeScript CLI coding assistant built for using Upstage Solar API.
 
 - The tight project spec lives in `docs/SPEC.md`.
 - The implementation order lives in `docs/ROADMAP.md`.
