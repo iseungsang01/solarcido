@@ -1,0 +1,14 @@
+[build]
+# Use the GNU target on Windows since MSVC Build Tools (link.exe) are not
+# installed in this environment. The stable-x86_64-pc-windows-gnu toolchain
+# ships a self-contained MinGW linker at:
+#   ~/.rustup/toolchains/stable-x86_64-pc-windows-gnu/lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained/
+target = "x86_64-pc-windows-gnu"
+
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+
+[host]
+# Build scripts (proc-macros) must also compile for the GNU host so they don't
+# require the absent MSVC link.exe.
+linker = "x86_64-w64-mingw32-gcc"

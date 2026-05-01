@@ -1,0 +1,22 @@
+[package]
+name = "solarcido-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "solarcido"
+path = "src/main.rs"
+
+[dependencies]
+serde_json.workspace = true
+solarcido-api = { path = "../api" }
+solarcido-commands = { path = "../commands" }
+solarcido-runtime = { path = "../runtime" }
+solarcido-tools = { path = "../tools" }
+tokio.workspace = true
+
+[lints]
+workspace = true
+
