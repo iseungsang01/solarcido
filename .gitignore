@@ -5,3 +5,5 @@ dist/
 # Rust / Cargo
 target/
 Cargo.lock
+
+.solarcido
