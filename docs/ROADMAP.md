@@ -210,9 +210,83 @@ Implementation rules:
 - Redact environment values that look secret-like.
 - Keep session files small; do not dump huge tool outputs without limits.
 
-## Phase 6: MCP Foundation
+## Phase 6: Multi-Agent Orchestration
 
 Status: next.
+
+Goal: reduce context pressure by replacing the single long-lived workflow loop
+with short-lived role-specific agents coordinated by an orchestrator.
+
+Design document:
+
+```txt
+docs/MULTI_AGENT_ORCHESTRATION.md
+```
+
+Target modules:
+
+```txt
+src/agents/
+  types.ts
+  agent-loop.ts
+  planner.ts
+  explorer.ts
+  executor.ts
+  verifier.ts
+  reviewer.ts
+  context-budget.ts
+
+src/workflow/
+  orchestrator.ts
+```
+
+Implementation rules:
+
+- Keep `src/workflow/run-agent-loop.ts` as the CLI-facing wrapper.
+- Implement the first orchestrator as a sequential pipeline:
+  planner -> explorer -> executor -> verifier -> reviewer.
+- Keep file writes centralized in the executor agent.
+- Use read-only tools for explorer and reviewer unless a later phase explicitly expands their permissions.
+- Pass structured `WorkflowPlan` and `AgentResult` objects between agents.
+- Do not pass raw tool transcripts between agents.
+- Do not store full agent transcripts in session metadata.
+- Add per-agent context estimation and compact local agent messages when the
+  estimated context reaches 90% of the configured context window.
+- Do not add parallel explorers until the sequential path is tested.
+
+Milestones:
+
+1. Add shared agent types and shape validation tests.
+2. Add context budget estimation tests.
+3. Add a reusable single-agent loop that preserves current tool behavior.
+4. Add planner and explorer agents.
+5. Add executor, verifier, and reviewer agents.
+6. Add `orchestrator.ts` and test the sequential workflow with mocked agents.
+7. Switch `runWorkflow` to the orchestrator.
+8. Add 90% per-agent compaction before model requests.
+9. Add optional parallel read-only explorers.
+
+Exit checks:
+
+```bash
+npm run typecheck
+npm test
+npm run build
+node dist/index.js --help
+```
+
+Non-goals:
+
+- Do not add MCP in this phase.
+- Do not add parallel mutating agents.
+- Do not change CLI flags unless a specific user-visible orchestration mode is
+  added and documented.
+- Do not change tool output truncation behavior until the basic orchestrator is
+  stable.
+
+## Phase 7: MCP Foundation
+
+Status: planned.
 
 Goal: prepare MCP without spreading MCP-specific logic through the whole app.
 

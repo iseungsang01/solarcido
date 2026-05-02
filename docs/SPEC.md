@@ -28,6 +28,8 @@ Core modules:
 - `src/cli.ts`: command-line parsing and help text.
 - `src/interactive.ts`: terminal session loop and slash commands.
 - `src/workflow/run-agent-loop.ts`: direct model/tool loop.
+- `src/workflow/orchestrator.ts`: target multi-agent workflow coordinator.
+- `src/agents/`: target role-specific agent loops for planning, exploration, execution, verification, and review.
 - `src/tools/registry.ts`: tool schema definitions, argument validation, and dispatch.
 - `src/tools/filesystem.ts`: workspace-scoped file operations.
 - `src/tools/process.ts`: workspace-scoped command execution.
@@ -41,6 +43,7 @@ Boundary rules:
 - Tool schemas and argument validation belong in `registry.ts`; side effects belong in dedicated tool modules.
 - File and process tools must never operate outside the resolved `cwd`.
 - New large features should get a new module instead of expanding central orchestration files.
+- Multi-agent orchestration must pass structured summaries between agents, not raw full transcripts.
 
 ## Command Surface
 
@@ -190,7 +193,7 @@ Tool behavior requirements:
 
 ## Agent Loop
 
-The workflow loop must:
+The current workflow loop must:
 
 - Send a concise system prompt describing Solarcido's role and available tool strategy.
 - Preserve the full tool output in model-visible messages.
@@ -204,6 +207,37 @@ The model should be instructed to:
 - Prefer focused edits over full rewrites.
 - Run relevant verification after changes.
 - Stay inside `cwd`.
+
+## Multi-Agent Orchestration
+
+Multi-agent orchestration is the target workflow for larger coding tasks. Its
+design is defined in `docs/MULTI_AGENT_ORCHESTRATION.md`.
+
+The orchestrated workflow must:
+
+- Keep `runWorkflow` as the CLI-facing entrypoint.
+- Split work into short-lived role-specific agents.
+- Use a planner, read-only explorer, executor, verifier, and reviewer sequence before adding parallelism.
+- Keep file writes centralized in the executor for the first implementation.
+- Pass only compact structured results between agents.
+- Avoid storing full agent transcripts in session metadata.
+- Track an estimated per-agent context budget.
+- Compact an agent's local messages before the next model request when the estimated context reaches 90% of the configured context window.
+
+The orchestrator should store only durable workflow state:
+
+- User goal.
+- Plan summary.
+- Agent result summaries.
+- Changed files.
+- Verification status.
+- Final summary, risks, and next steps.
+
+The orchestrator must not:
+
+- Perform file or process side effects directly.
+- Merge raw tool outputs from agents into its own context.
+- Run parallel mutating agents until conflict handling is explicitly designed.
 
 ## MCP Roadmap
 
@@ -293,4 +327,5 @@ Update this spec when changing:
 2. Add config loading with validation.
 3. Add approval policy plumbing for commands.
 4. Add tests for CLI parsing and tool path boundaries.
-5. Add MCP only after config and approval policies are stable.
+5. Add multi-agent orchestration for context isolation.
+6. Add MCP only after config, approval policies, and orchestration boundaries are stable.
