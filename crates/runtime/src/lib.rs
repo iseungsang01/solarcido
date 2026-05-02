@@ -1,8 +1,13 @@
+pub mod config;
 pub mod session;
 pub mod usage;
 
+pub use config::{
+    config_keys, get_config_value, set_config_value, ApprovalPolicy, ConfigStore, SolarcidoConfig,
+};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-pub use session::{new_session_id, Session, SessionSnapshot, SessionStore};
+pub use session::{new_session_id, Session, SessionSnapshot, SessionStore, SessionSummary};
 use solarcido_api::{
     ContentBlockDelta, InputContentBlock, InputMessage, MessageRequest, OutputContentBlock,
     ReasoningEffort, SolarClient, StreamEvent, ToolDefinition, Usage,
@@ -12,7 +17,8 @@ use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum PermissionMode {
     ReadOnly,
     WorkspaceWrite,
@@ -631,14 +637,22 @@ fn parse_streaming_tool_input(input_json: &str) -> Value {
 
 #[must_use]
 pub fn default_system_prompt(permission_mode: PermissionMode) -> String {
-    [
-        "You are Solarcido, a local terminal coding assistant.",
-        "Operate like claw: inspect the repository, call tools for file and command work, and continue until the user's task is complete.",
-        "Prefer grep_search and glob_search before broad reads.",
-        "Prefer edit_file for focused changes and write_file for new files or intentional full-file replacement.",
-        "Run verification commands after behavior changes when practical.",
-        "All tool calls must stay within the selected working directory.",
-        &format!("Current permission mode: {}.", permission_mode.as_str()),
-    ]
-    .join(" ")
+    system_prompt_with_memory(permission_mode, None)
+}
+
+#[must_use]
+pub fn system_prompt_with_memory(permission_mode: PermissionMode, memory: Option<&str>) -> String {
+    let mut parts = vec![
+        "You are Solarcido, a local terminal coding assistant.".to_string(),
+        "Operate like claw: inspect the repository, call tools for file and command work, and continue until the user's task is complete.".to_string(),
+        "Prefer grep_search and glob_search before broad reads.".to_string(),
+        "Prefer edit_file for focused changes and write_file for new files or intentional full-file replacement.".to_string(),
+        "Run verification commands after behavior changes when practical.".to_string(),
+        "All tool calls must stay within the selected working directory.".to_string(),
+        format!("Current permission mode: {}.", permission_mode.as_str()),
+    ];
+    if let Some(memory) = memory.filter(|memory| !memory.trim().is_empty()) {
+        parts.push(format!("User memory:\n{}", memory.trim()));
+    }
+    parts.join(" ")
 }

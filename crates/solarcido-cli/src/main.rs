@@ -3,8 +3,9 @@ use solarcido_commands::{
     render_slash_command_help_json, resolve_slash_command, slash_command_specs, SlashCommand,
 };
 use solarcido_runtime::{
-    default_system_prompt, new_session_id, usage::UsageTracker, ConversationRuntime,
-    PermissionMode, PermissionPrompter, PermissionRequest, RuntimeStatusEvent, SessionStore,
+    get_config_value, new_session_id, set_config_value, system_prompt_with_memory,
+    usage::UsageTracker, ConfigStore, ConversationRuntime, PermissionMode, PermissionPrompter,
+    PermissionRequest, RuntimeStatusEvent, SessionStore, SolarcidoConfig,
     DEFAULT_MAX_OUTPUT_TOKENS,
 };
 use solarcido_tools::WorkspaceTools;
@@ -78,6 +79,18 @@ enum CliAction {
         output_format: OutputFormat,
         permission_mode: PermissionMode,
     },
+    Config {
+        action: ConfigAction,
+        output_format: OutputFormat,
+    },
+    Sessions {
+        action: SessionsAction,
+        cwd: PathBuf,
+        output_format: OutputFormat,
+    },
+    Memory {
+        output_format: OutputFormat,
+    },
     Init {
         cwd: PathBuf,
         output_format: OutputFormat,
@@ -90,6 +103,19 @@ enum CliAction {
     },
 }
 
+#[derive(Debug, Clone)]
+enum ConfigAction {
+    Get { key: Option<String> },
+    Set { key: String, value: String },
+    Path,
+}
+
+#[derive(Debug, Clone)]
+enum SessionsAction {
+    List,
+    Show { selector: String },
+}
+
 #[tokio::main]
 async fn main() {
     if let Err(error) = run().await {
@@ -100,8 +126,10 @@ async fn main() {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     load_dotenv_if_present();
+    let config_store = ConfigStore::from_env()?;
+    let config = config_store.load()?;
 
-    match parse_args(std::env::args().skip(1).collect())? {
+    match parse_args(std::env::args().skip(1).collect(), &config)? {
         CliAction::Prompt {
             prompt,
             model,
@@ -112,6 +140,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             max_output_tokens,
             resume,
         } => {
+            let memory = config_store.load_memory()?;
             run_prompt(
                 &prompt,
                 &model,
@@ -121,6 +150,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 reasoning_effort,
                 max_output_tokens,
                 resume.as_deref(),
+                memory.as_deref(),
             )
             .await?;
         }
@@ -132,6 +162,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             max_output_tokens,
             resume,
         } => {
+            let memory = config_store.load_memory()?;
             run_repl(
                 model,
                 cwd,
@@ -139,6 +170,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 reasoning_effort,
                 max_output_tokens,
                 resume.as_deref(),
+                memory.as_deref(),
             )
             .await?
         }
@@ -165,7 +197,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         CliAction::SystemPrompt {
             output_format,
             permission_mode,
-        } => print_system_prompt(output_format, permission_mode)?,
+        } => {
+            let memory = config_store.load_memory()?;
+            print_system_prompt(output_format, permission_mode, memory.as_deref())?
+        }
+        CliAction::Config {
+            action,
+            output_format,
+        } => handle_config_command(&config_store, &config, action, output_format)?,
+        CliAction::Sessions {
+            action,
+            cwd,
+            output_format,
+        } => handle_sessions_command(cwd, action, output_format)?,
+        CliAction::Memory { output_format } => print_memory(&config_store, output_format)?,
         CliAction::Init { cwd, output_format } => run_init(&cwd, output_format)?,
         CliAction::Help { output_format } => print_help(output_format)?,
         CliAction::Version { output_format } => print_version(output_format)?,
@@ -323,12 +368,12 @@ fn format_status_line(label: &str, value: impl AsRef<str>, color_enabled: bool) 
     )
 }
 
-fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
-    let mut model = std::env::var("SOLARCIDO_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+fn parse_args(args: Vec<String>, config: &SolarcidoConfig) -> Result<CliAction, String> {
+    let mut model = std::env::var("SOLARCIDO_MODEL").unwrap_or_else(|_| config.model.clone());
     let mut cwd = std::env::current_dir().map_err(|error| error.to_string())?;
     let mut output_format = OutputFormat::Text;
-    let mut permission_mode = PermissionMode::DangerFullAccess;
-    let mut reasoning_effort = ReasoningEffort::Medium;
+    let mut permission_mode = config.sandbox;
+    let mut reasoning_effort = config.reasoning_effort;
     let mut max_output_tokens = match std::env::var("SOLARCIDO_MAX_OUTPUT_TOKENS") {
         Ok(value) => parse_max_output_tokens(&value)?,
         Err(_) => DEFAULT_MAX_OUTPUT_TOKENS,
@@ -454,6 +499,9 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
             output_format,
             permission_mode,
         }),
+        "config" => parse_config_action(&positionals[1..], output_format),
+        "sessions" => parse_sessions_action(&positionals[1..], cwd, output_format),
+        "memory" => Ok(CliAction::Memory { output_format }),
         "init" => Ok(CliAction::Init { cwd, output_format }),
         "help" => Ok(CliAction::Help { output_format }),
         "version" => Ok(CliAction::Version { output_format }),
@@ -468,6 +516,73 @@ fn parse_output_format(value: &str) -> Result<OutputFormat, String> {
         other => Err(format!(
             "invalid output format `{other}`; expected text or json"
         )),
+    }
+}
+
+fn parse_config_action(args: &[String], output_format: OutputFormat) -> Result<CliAction, String> {
+    match args.first().map(String::as_str) {
+        None | Some("get") => Ok(CliAction::Config {
+            action: ConfigAction::Get {
+                key: args.get(1).cloned(),
+            },
+            output_format,
+        }),
+        Some("set") => {
+            let key = args
+                .get(1)
+                .ok_or("Usage: solarcido config set <key> <value>")?
+                .clone();
+            let value = args
+                .get(2)
+                .ok_or("Usage: solarcido config set <key> <value>")?
+                .clone();
+            if args.len() > 3 {
+                return Err("Usage: solarcido config set <key> <value>".to_string());
+            }
+            Ok(CliAction::Config {
+                action: ConfigAction::Set { key, value },
+                output_format,
+            })
+        }
+        Some("path") => Ok(CliAction::Config {
+            action: ConfigAction::Path,
+            output_format,
+        }),
+        Some(_) => Err(
+            "Usage: solarcido config get [key] | config set <key> <value> | config path"
+                .to_string(),
+        ),
+    }
+}
+
+fn parse_sessions_action(
+    args: &[String],
+    cwd: PathBuf,
+    output_format: OutputFormat,
+) -> Result<CliAction, String> {
+    match args.first().map(String::as_str) {
+        None | Some("list") => Ok(CliAction::Sessions {
+            action: SessionsAction::List,
+            cwd,
+            output_format,
+        }),
+        Some("show") => {
+            let selector = args
+                .get(1)
+                .ok_or("Usage: solarcido sessions show <id|latest|path>")?
+                .clone();
+            if args.len() > 2 {
+                return Err("Usage: solarcido sessions show <id|latest|path>".to_string());
+            }
+            Ok(CliAction::Sessions {
+                action: SessionsAction::Show { selector },
+                cwd,
+                output_format,
+            })
+        }
+        Some(_) => {
+            Err("Usage: solarcido sessions list | sessions show <id|latest|path>".to_string())
+        }
     }
 }
 
@@ -499,6 +614,7 @@ async fn run_prompt(
     reasoning_effort: ReasoningEffort,
     max_output_tokens: u32,
     resume: Option<&str>,
+    memory: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = SolarClient::from_env()?;
     let canonical_cwd = cwd.canonicalize()?;
@@ -514,7 +630,7 @@ async fn run_prompt(
         client,
         model,
         reasoning_effort,
-        default_system_prompt(permission_mode),
+        system_prompt_with_memory(permission_mode, memory),
         tools,
         permission_mode,
     )
@@ -591,6 +707,7 @@ async fn run_repl(
     reasoning_effort: ReasoningEffort,
     max_output_tokens: u32,
     resume: Option<&str>,
+    memory: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let color_enabled = io::stdout().is_terminal();
     print_shell_header(
@@ -616,7 +733,7 @@ async fn run_repl(
         client,
         &model,
         reasoning_effort,
-        default_system_prompt(permission_mode),
+        system_prompt_with_memory(permission_mode, memory),
         tools,
         permission_mode,
     )
@@ -945,14 +1062,155 @@ fn print_skills(output_format: OutputFormat) -> Result<(), Box<dyn std::error::E
 fn print_system_prompt(
     output_format: OutputFormat,
     permission_mode: PermissionMode,
+    memory: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let prompt = default_system_prompt(permission_mode);
+    let prompt = system_prompt_with_memory(permission_mode, memory);
     match output_format {
         OutputFormat::Text => println!("{prompt}"),
         OutputFormat::Json => println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "system_prompt": prompt
+            }))?
+        ),
+    }
+    Ok(())
+}
+
+fn handle_config_command(
+    store: &ConfigStore,
+    config: &SolarcidoConfig,
+    action: ConfigAction,
+    output_format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        ConfigAction::Get { key } => {
+            let value = get_config_value(config, key.as_deref())?;
+            match output_format {
+                OutputFormat::Text | OutputFormat::Json => {
+                    println!("{}", serde_json::to_string_pretty(&value)?);
+                }
+            }
+        }
+        ConfigAction::Set { key, value } => {
+            let updated = set_config_value(config.clone(), &key, &value)?;
+            store.save(&updated)?;
+            match output_format {
+                OutputFormat::Text => println!("Saved config to {}", store.config_path().display()),
+                OutputFormat::Json => println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "saved": true,
+                        "path": store.config_path().to_string_lossy(),
+                        "config": updated
+                    }))?
+                ),
+            }
+        }
+        ConfigAction::Path => match output_format {
+            OutputFormat::Text => println!("{}", store.config_path().display()),
+            OutputFormat::Json => println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "path": store.config_path().to_string_lossy()
+                }))?
+            ),
+        },
+    }
+    Ok(())
+}
+
+fn handle_sessions_command(
+    cwd: PathBuf,
+    action: SessionsAction,
+    output_format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let canonical_cwd = cwd.canonicalize()?;
+    let store = SessionStore::for_workspace(&canonical_cwd);
+    match action {
+        SessionsAction::List => {
+            let sessions = store.list()?;
+            match output_format {
+                OutputFormat::Text => {
+                    if sessions.is_empty() {
+                        println!("No sessions found in {}", canonical_cwd.display());
+                    } else {
+                        for session in sessions {
+                            println!(
+                                "{}  model={} reasoning={} messages={} updated_at_ms={}",
+                                session.id,
+                                session.model,
+                                session.reasoning_effort,
+                                session.message_count,
+                                session.updated_at_ms
+                            );
+                        }
+                    }
+                }
+                OutputFormat::Json => println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "sessions": sessions
+                    }))?
+                ),
+            }
+        }
+        SessionsAction::Show { selector } => {
+            let path = store.resolve_selector(&selector)?;
+            let snapshot = store.load(&selector)?;
+            let value = serde_json::json!({
+                "id": snapshot.id,
+                "path": path.to_string_lossy(),
+                "model": snapshot.model,
+                "reasoning_effort": snapshot.reasoning_effort,
+                "created_at_ms": snapshot.created_at_ms,
+                "updated_at_ms": snapshot.updated_at_ms,
+                "message_count": snapshot.messages.len()
+            });
+            match output_format {
+                OutputFormat::Text => {
+                    println!("session: {}", value["id"].as_str().unwrap_or(""));
+                    println!("path: {}", path.display());
+                    println!("model: {}", value["model"].as_str().unwrap_or(""));
+                    println!(
+                        "reasoning_effort: {}",
+                        value["reasoning_effort"].as_str().unwrap_or("")
+                    );
+                    println!(
+                        "messages: {}",
+                        value["message_count"].as_u64().unwrap_or_default()
+                    );
+                    println!(
+                        "updated_at_ms: {}",
+                        value["updated_at_ms"].as_u64().unwrap_or_default()
+                    );
+                }
+                OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&value)?),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn print_memory(
+    store: &ConfigStore,
+    output_format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let memory = store.load_memory()?;
+    match output_format {
+        OutputFormat::Text => {
+            println!("memory_path: {}", store.memory_path().display());
+            if let Some(memory) = memory {
+                println!("{memory}");
+            } else {
+                println!("No memory file found.");
+            }
+        }
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "path": store.memory_path().to_string_lossy(),
+                "memory": memory
             }))?
         ),
     }
@@ -1015,6 +1273,9 @@ fn print_help(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Err
                  \x20 mcp                  List MCP servers\n\
                  \x20 skills               List installed skills\n\
                  \x20 system-prompt        Print the active system prompt\n\
+                 \x20 config               Get, set, or locate persistent config\n\
+                 \x20 sessions             List or show workspace sessions\n\
+                 \x20 memory               Show global memory used in prompts\n\
                  \x20 init                 Initialize Solarcido for this repository\n\
                  \x20 help                 Print help\n\
                  \x20 version              Print version\n\n\
@@ -1037,7 +1298,7 @@ fn print_help(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Err
             println!(
                 "{}",
                 serde_json::to_string_pretty(&serde_json::json!({
-                    "commands": ["prompt", "run", "status", "sandbox", "agents", "mcp", "skills", "system-prompt", "init", "help", "version"],
+                    "commands": ["prompt", "run", "status", "sandbox", "agents", "mcp", "skills", "system-prompt", "config", "sessions", "memory", "init", "help", "version"],
                     "options": ["--model", "--output-format", "--permission-mode", "--dangerously-skip-permissions", "--reasoning-effort", "--max-output-tokens", "--resume", "--cwd", "--allowedTools"],
                     "slash_commands": commands_json["commands"]
                 }))?

@@ -54,6 +54,18 @@ solarcido status
 solarcido init
 ```
 
+Persistent defaults live in `~/.solarcido/config.json`, or under
+`SOLARCIDO_HOME/config.json` when `SOLARCIDO_HOME` is set:
+
+```bash
+solarcido config get
+solarcido config set sandbox workspace-write
+solarcido config path
+solarcido sessions list
+solarcido sessions show latest
+solarcido memory
+```
+
 For TypeScript compatibility work, the old implementation is still available
 through the existing npm scripts:
 
@@ -71,6 +83,25 @@ node dist/index.js --help
 - `--permission-mode`: `read-only | workspace-write | danger-full-access`
 - `--output-format`: `text | json`
 - `--resume`: `latest`, a session id, or a `.jsonl` session path
+
+## Config and memory
+
+Rust Solarcido loads persistent defaults from `~/.solarcido/config.json`:
+
+```json
+{
+  "model": "solar-pro3-260323",
+  "reasoningEffort": "medium",
+  "approvalPolicy": "on-failure",
+  "sandbox": "workspace-write",
+  "quiet": false
+}
+```
+
+CLI flags override config values. `SOLARCIDO_MODEL` and
+`SOLARCIDO_MAX_OUTPUT_TOKENS` remain supported for environment overrides.
+Optional global memory is read from `~/.solarcido/memory.md` and appended to the
+active system prompt when present.
 
 ## Development
 

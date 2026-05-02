@@ -18,7 +18,7 @@ Target layout from `docs/RUST_PORT.md`:
 | `compat-harness` | skeleton | Types + stub `extract_manifest` — deferred to Phase 8 |
 | `mock-solar-service` | partial | Scenario types, completion/SSE builders, builtin scenarios — HTTP server stub only |
 | `plugins` | skeleton | Metadata types, stub registry/manager — deferred to Phase 7 |
-| `runtime` | real | ConversationRuntime, permission policy, streaming + non-streaming turn execution, JSONL session snapshots, usage/cost tracking (7 tests) |
+| `runtime` | real | ConversationRuntime, permission policy, config loading, memory loading, streaming + non-streaming turn execution, JSONL session snapshots, usage/cost tracking (11 tests) |
 | `solarcido-cli` | real | Default `solarcido` entrypoint, CLI parsing, one-shot prompt, REPL with streaming, `--resume`, full slash dispatch, 11 CLI subcommands |
 | `telemetry` | real | Session tracer, JSONL + memory sinks, token usage, event types |
 | `tools` | real | 11 tools: bash, read/write/edit_file, glob/grep_search, Sleep, StructuredOutput, SendUserMessage, ToolSearch, TodoWrite |
@@ -103,6 +103,9 @@ Stub handlers (return "not yet implemented" messages):
 | `mcp` | real | Text + JSON output (stub: no servers configured) |
 | `skills` | real | Text + JSON output (stub: no skills installed) |
 | `system-prompt` | real | Text + JSON output, prints active system prompt |
+| `config` | real | `get`, `set`, and `path` for `~/.solarcido/config.json` |
+| `sessions` | real | Lists workspace sessions and shows compact metadata for a selector |
+| `memory` | real | Shows optional global memory from `~/.solarcido/memory.md` |
 | `init` | real | Creates `.solarcido/` dir and `.solarcido.json` config |
 
 Global option status:
@@ -123,11 +126,11 @@ Global option status:
 | Structured tool results | real | Fed back to model |
 | Permission enforcement | real | 3 modes + interactive prompter |
 | Session persistence and resume | real | Workspace-local JSONL snapshots, `latest` pointer, `--resume latest|id|path` |
-| Config loading and merge precedence | not started | Phase 6 |
+| Config loading and merge precedence | real | `~/.solarcido/config.json` plus env and CLI overrides |
 | MCP server lifecycle | not started | Phase 7 |
 | Plugin and hook integration | not started | Phase 7 |
 | Usage and cost accounting | real | TokenUsage, ModelPricing, UsageCostEstimate, UsageTracker with cumulative tracking and cost summary lines (5 tests) |
-| System prompt assembly | partial | Static prompt only; no memory/config/tool injection |
+| System prompt assembly | partial | Config-selected settings and optional global memory are injected; no tool/plugin injection yet |
 
 ## Permission and Sandbox
 
@@ -145,13 +148,13 @@ Global option status:
 
 | Feature | Status |
 |---------|--------|
-| `~/.solarcido/` state directory | not started |
-| `~/.solarcido/config.json` | not started |
+| `~/.solarcido/` state directory | real | Default config and memory home; override with `SOLARCIDO_HOME` |
+| `~/.solarcido/config.json` | real | Strict validation, unknown keys rejected |
 | `~/.solarcido/sessions/` | not started |
 | `<repo>/.solarcido/` | real | Created by `solarcido init` |
 | `<repo>/.solarcido/sessions/` | real | Created by `solarcido init` and prompt/REPL session saves |
 | `<repo>/.solarcido.json` | real | Created by `solarcido init` with default model |
-| Config merge precedence | not started |
+| Config merge precedence | real | CLI flags > env overrides > global config > built-in defaults |
 
 ## Mock Parity Harness
 
@@ -213,10 +216,10 @@ Global option status:
 | 0 — Freeze Decisions | Lock porting contract | complete |
 | 1 — Workspace Reshape | Match reference crate boundaries | complete |
 | 2 — Solar API Adapter | Provider layer with Solar behavior | complete |
-| 3 — Runtime Core | Replace prototype with claw-style runtime | partial (session persistence/resume and usage/cost done; config-backed prompt assembly pending) |
+| 3 — Runtime Core | Replace prototype with claw-style runtime | partial (session persistence/resume, config-backed defaults, memory injection, and usage/cost done; tool/plugin injection pending) |
 | 4 — Tools and Permissions | Real local coding-agent parity | partial (11/40 tools) |
 | 5 — CLI and REPL Parity | Binary feels like claw with Solarcido branding | partial (11 CLI commands, 22/22 slash handlers wired) |
-| 6 — Config, Sessions, Memory | Repeated local use stable | not started |
+| 6 — Config, Sessions, Memory | Repeated local use stable | complete |
 | 7 — MCP, Plugins, Hooks, Skills | Extension system | not started |
 | 8 — Mock Parity Harness | Deterministic scenario proof | not started |
 | 9 — Migration Gate | Rust replaces TypeScript CLI | not started |

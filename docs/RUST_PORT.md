@@ -6,23 +6,24 @@ The Rust port of Solarcido is the default CLI entrypoint. It replaces the Node.j
 
 ## Current Status
 
-- **Phase 0 (Baseline)** – Completed. The Rust CLI (`crates/solarcido-cli`) is functional and passes all baseline tests.
-- **Phase 1 (Core Contracts)** – Completed. Core tool contracts (list, read, search, write, edit, command, finish) are stable and tested.
-- **Phase 2 (Config System)** – Completed. Config loading and validation are implemented in Rust, with support for `~/.solarcido/config.json`.
-- **Phase 3 (Approval Policy)** – Completed. Command classification and policy enforcement are in place.
-- **Phase 4 (Sandbox Semantics)** – Completed. `read-only` and `workspace-write` sandbox modes are enforced.
-- **Phase 5 (Better Agent Sessions)** – Completed. Session metadata is stored under `~/.solarcido/sessions/`.
-- **Phase 6 (MCP Foundation)** – In progress. MCP server configuration and connection manager are being built.
+- **Phase 0 (Baseline)**: Completed. The Rust CLI (`crates/solarcido-cli`) is functional and passes all baseline tests.
+- **Phase 1 (Core Contracts)**: Completed. Core tool contracts (list, read, search, write, edit, command, finish) are stable and tested.
+- **Phase 2 (Config System)**: Completed. Config loading and validation are implemented in Rust, with support for `~/.solarcido/config.json`.
+- **Phase 3 (Approval Policy)**: Completed. Command classification and policy enforcement are in place.
+- **Phase 4 (Sandbox Semantics)**: Completed. `read-only` and `workspace-write` sandbox modes are enforced.
+- **Phase 5 (Better Agent Sessions)**: Completed. Session metadata is stored under workspace `.solarcido/sessions/`.
+- **Phase 6 (Config, Sessions, Memory)**: Completed. Rust config loading, config commands, session inspection, and optional global memory are wired.
+- **Phase 7 (MCP Foundation)**: Next. MCP server configuration and connection manager are not implemented yet.
 
 ## Implementation Details
 
 - **Binary location**: `target/release/solarcido` (default) or `target/debug/solarcido`.
 - **Entry point**: `src/main.rs` in the `solarcido-cli` crate.
-- **Tool modules**: `src/tools/` contains implementations for all file and command tools.
-- **Config module**: `src/config/` handles loading and validation.
-- **Approval module**: `src/approvals/` classifies commands and enforces policies.
-- **Session module**: `src/sessions/` manages session metadata.
-- **MCP module**: `src/mcp/` under development.
+- **Tool modules**: `crates/tools/src/` contains implementations for all file and command tools.
+- **Config module**: `crates/runtime/src/config.rs` handles Rust config loading and validation.
+- **Approval module**: `crates/runtime/src/lib.rs` handles permission policy enforcement.
+- **Session module**: `crates/runtime/src/session.rs` manages JSONL session snapshots.
+- **MCP module**: not implemented yet; planned for the next phase.
 
 ## Recent Changes
 
@@ -31,14 +32,17 @@ The Rust port of Solarcido is the default CLI entrypoint. It replaces the Node.j
 - Fixed edge cases in `edit_file` ambiguity handling.
 - Added `run_command` exit code, stdout, and stderr reporting.
 - Integrated sandbox mode into command execution pipeline.
+- Added `~/.solarcido/config.json` loading with strict validation.
+- Added `solarcido config`, `solarcido sessions`, and `solarcido memory`.
+- Added optional `~/.solarcido/memory.md` injection into the active system prompt.
 
 ## Next Steps
 
 1. Finish MCP server configuration and connection manager.
 2. Add MCP tool adapter layer.
-3. Update documentation (`README.md`, `docs/SPEC.md`) to reflect MCP capabilities.
-4. Run final exit checks and ensure help text matches.
-5. Deploy a stable release of the Rust CLI.
+3. Add plugin, hook, and skill lifecycle support.
+4. Build the mock parity harness.
+5. Run final migration checks and prepare a stable Rust CLI release.
 
 ## Verification
 
@@ -47,6 +51,8 @@ Run the following commands to verify the Rust port is working:
 ```bash
 cargo test --workspace
 cargo run -p solarcido-cli -- --help
+cargo run -p solarcido-cli -- config get
+cargo run -p solarcido-cli -- sessions list
 cargo run -p solarcido-cli -- prompt "summarize this repository" --cwd .
 cargo run -p solarcido-cli -- --resume latest prompt "continue"
 ```

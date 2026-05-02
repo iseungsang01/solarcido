@@ -35,6 +35,17 @@ pub struct SessionSnapshot {
     pub messages: Vec<InputMessage>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionSummary {
+    pub id: String,
+    pub path: PathBuf,
+    pub model: String,
+    pub reasoning_effort: String,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
+    pub message_count: usize,
+}
+
 impl SessionSnapshot {
     #[must_use]
     pub fn new(
@@ -114,6 +125,39 @@ impl SessionStore {
     pub fn load(&self, selector: &str) -> Result<SessionSnapshot, RuntimeError> {
         let path = self.resolve_selector(selector)?;
         load_snapshot(&path)
+    }
+
+    pub fn list(&self) -> Result<Vec<SessionSummary>, RuntimeError> {
+        let entries = match fs::read_dir(&self.root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => {
+                return Err(RuntimeError::new(format!(
+                    "failed to read session directory: {error}"
+                )));
+            }
+        };
+        let mut sessions = Vec::new();
+        for entry in entries {
+            let entry = entry
+                .map_err(|error| RuntimeError::new(format!("failed to read session: {error}")))?;
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let snapshot = load_snapshot(&path)?;
+            sessions.push(SessionSummary {
+                id: snapshot.id,
+                path,
+                model: snapshot.model,
+                reasoning_effort: snapshot.reasoning_effort,
+                created_at_ms: snapshot.created_at_ms,
+                updated_at_ms: snapshot.updated_at_ms,
+                message_count: snapshot.messages.len(),
+            });
+        }
+        sessions.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+        Ok(sessions)
     }
 
     pub fn resolve_selector(&self, selector: &str) -> Result<PathBuf, RuntimeError> {
@@ -248,10 +292,21 @@ fn now_ms() -> u64 {
 mod tests {
     use super::*;
     use solarcido_api::InputMessage;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_test_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos());
+        std::env::temp_dir().join(format!(
+            "solarcido-session-test-{name}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
 
     #[test]
     fn roundtrips_jsonl_session_snapshot() {
-        let dir = std::env::temp_dir().join(format!("solarcido-session-test-{}", new_session_id()));
+        let dir = unique_test_dir("roundtrip");
         let path = dir.join("sample.jsonl");
         let snapshot = SessionSnapshot::new(
             "sample",
@@ -271,7 +326,7 @@ mod tests {
 
     #[test]
     fn latest_selector_resolves_to_pointer_id() {
-        let dir = std::env::temp_dir().join(format!("solarcido-session-test-{}", new_session_id()));
+        let dir = unique_test_dir("latest");
         let store = SessionStore::new(&dir);
         let snapshot = SessionSnapshot::new(
             "abc",
@@ -285,6 +340,37 @@ mod tests {
         let resolved = store.resolve_selector("latest").unwrap();
 
         assert_eq!(resolved, saved);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn lists_sessions_newest_first() {
+        let dir = unique_test_dir("list");
+        let store = SessionStore::new(&dir);
+        store
+            .save(&SessionSnapshot::new(
+                "first",
+                "solar-pro3-260323",
+                "medium",
+                "system",
+                vec![InputMessage::user_text("hello")],
+            ))
+            .unwrap();
+        store
+            .save(&SessionSnapshot::new(
+                "second",
+                "solar-pro3-260323",
+                "medium",
+                "system",
+                vec![InputMessage::user_text("hello")],
+            ))
+            .unwrap();
+
+        let sessions = store.list().unwrap();
+
+        assert_eq!(sessions.len(), 2);
+        assert!(sessions.iter().any(|session| session.id == "first"));
+        assert!(sessions.iter().any(|session| session.id == "second"));
         let _ = fs::remove_dir_all(dir);
     }
 }
