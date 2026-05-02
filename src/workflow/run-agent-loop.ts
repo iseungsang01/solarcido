@@ -11,6 +11,7 @@ import { completeSession, createSession, failSession } from "../sessions/session
 import { createSolarClient, runSolarChat } from "../solar/client.js";
 import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
 import { createToolDefinitions, executeToolCall, type FinishPayload } from "../tools/registry.js";
+import { orchestrateGoal } from "./orchestrator.js";
 
 /**
  * Run workflow options.
@@ -20,8 +21,8 @@ export type RunWorkflowOptions = {
   cwd?: string;
   reasoningEffort?: ReasoningEffort;
   model?: string;
-  approvalPolicy?: ApprovalPolicy;
-  sandbox?: SandboxMode;
+  approvalPolicy?: string;
+  sandbox?: string;
   /**
    * When true, suppress assistant messages (only tool output).
    */
@@ -85,83 +86,17 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   }
 
   try {
-    while (true) {
-      const response = await waitForSolarResponse(
-        () =>
-          runSolarChat(client, {
-            model: selectedModel,
-            messages,
-            tools,
-            toolChoice: "auto",
-            reasoningEffort,
-            temperature: 0.2,
-          }),
-        {
-          quiet: options.quiet,
-          model: selectedModel,
-          reasoningEffort,
-        },
-      );
-
-      const message = response.choices[0]?.message;
-
-      if (!message) {
-        throw new Error("Assistant returned no message.");
-      }
-
-      messages.push({
-        role: "assistant",
-        content: message.content ?? "",
-        tool_calls: message.tool_calls,
-      });
-
-      if (message.content) {
-        transcript.push(`assistant: ${message.content}`);
-        if (!options.quiet) {
-          console.log(`[assistant] ${message.content}`);
-        }
-      }
-
-      if (!message.tool_calls || message.tool_calls.length === 0) {
-        messages.push({
-          role: "user",
-          content: requiresModification
-            ? "Continue by using repository tools now. This goal requires actual edits before finish; do not only list expected actions."
-            : "Continue by using repository tools if more work is needed, or call finish only if the task is actually complete.",
-        });
-        continue;
-      }
-
-      for (const toolCall of message.tool_calls) {
-        const result = await executeToolCall(cwd, toolCall, { approvalPolicy, sandbox });
-        const finishBlocked = result.finish && requiresModification && sandbox !== "read-only" && !successfulModification;
-        const toolContent = finishBlocked ? blockedPrematureFinishMessage() : result.content;
-        const finish = finishBlocked ? undefined : result.finish;
-
-        transcript.push(`tool:${result.toolName}: ${toolContent}`);
-        console.log(`[tool:${result.toolName}] ${summarizeToolOutput(toolContent)}`);
-
-        messages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: toolContent,
-        });
-
-        if (isSuccessfulModificationTool(result.toolName, toolContent)) {
-          successfulModification = true;
-        }
-
-        if (finish) {
-          await completeSession(session, {
-            summary: finish.summary,
-            changedFiles: finish.changed_files,
-            nextSteps: finish.next_steps,
-          });
-          printFinish(finish);
-          return;
-        }
-      }
-    }
+    const orchestrationResult = await orchestrateGoal(client, options.goal, cwd, reasoningEffort, selectedModel, approvalPolicy, sandbox);
+    await completeSession(session, {
+      summary: orchestrationResult.summary,
+      changedFiles: orchestrationResult.changedFiles,
+      nextSteps: orchestrationResult.nextSteps,
+    });
+    printFinish({
+      summary: orchestrationResult.summary,
+      changed_files: orchestrationResult.changedFiles,
+      next_steps: orchestrationResult.nextSteps,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await failSession(session, message);
@@ -174,7 +109,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
  * content still goes into the model's transcript.
  */
 function summarizeToolOutput(content: string): string {
-  const trimmed = content.replace(/\s+$/, "");
+  const trimmed = content.replace(/s+$/, "");
   if (!trimmed) return "(empty)";
   const cap = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}...` : s);
   const lines = trimmed.split(/\r?\n/);
@@ -210,11 +145,9 @@ async function waitForSolarResponse<T>(
 
   try {
     const response = await request();
-
     if (!options.quiet && printedWaitNotice) {
       console.log(`[status] Solar response received after ${formatElapsed(Date.now() - startedAt)}.`);
     }
-
     return response;
   } finally {
     if (noticeTimer) clearTimeout(noticeTimer);
@@ -226,7 +159,6 @@ function formatElapsed(milliseconds: number): string {
   const totalSeconds = Math.max(0, Math.round(milliseconds / 1_000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-
   if (minutes === 0) return `${seconds}s`;
   return `${minutes}m ${seconds}s`;
 }
@@ -236,11 +168,9 @@ function formatElapsed(milliseconds: number): string {
  */
 function printFinish(finish: FinishPayload): void {
   console.log(`\n[done] ${finish.summary}`);
-
   if (finish.changed_files.length > 0) {
-    console.log(`[done] Changed files: ${finish.changed_files.join(", ")}`);
+    console.log(`[done] Changed files: ${finish.changed_files.join(", ")});`);
   }
-
   if (finish.next_steps.length > 0) {
     console.log("[done] Next steps:");
     for (const step of finish.next_steps) {
