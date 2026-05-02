@@ -134,7 +134,9 @@ pub const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         name: "plugin",
         aliases: &["plugins", "marketplace"],
         summary: "Manage plugins",
-        argument_hint: Some("[list|install <path>|enable <name>|disable <name>|uninstall <id>|update <id>]"),
+        argument_hint: Some(
+            "[list|install <path>|enable <name>|disable <name>|uninstall <id>|update <id>]",
+        ),
         resume_supported: false,
     },
     SlashCommandSpec {
@@ -185,9 +187,9 @@ pub fn slash_command_specs() -> &'static [SlashCommandSpec] {
 #[must_use]
 pub fn resolve_slash_command(token: &str) -> Option<&'static SlashCommandSpec> {
     let name = token.trim_start_matches('/');
-    SLASH_COMMAND_SPECS.iter().find(|spec| {
-        spec.name == name || spec.aliases.iter().any(|a| *a == name)
-    })
+    SLASH_COMMAND_SPECS
+        .iter()
+        .find(|spec| spec.name == name || spec.aliases.iter().any(|a| *a == name))
 }
 
 /// A parsed slash command invocation.
@@ -206,11 +208,7 @@ impl SlashCommand {
             return None;
         }
         let mut parts = trimmed.splitn(2, ' ');
-        let name = parts
-            .next()?
-            .trim_start_matches('/')
-            .trim()
-            .to_lowercase();
+        let name = parts.next()?.trim_start_matches('/').trim().to_lowercase();
         if name.is_empty() {
             return None;
         }
@@ -229,7 +227,9 @@ impl SlashCommand {
 pub fn render_slash_command_help() -> String {
     let mut out = String::from("Slash commands:\n");
     for spec in SLASH_COMMAND_SPECS {
-        let hint = spec.argument_hint.map_or(String::new(), |h| format!(" {h}"));
+        let hint = spec
+            .argument_hint
+            .map_or(String::new(), |h| format!(" {h}"));
         let aliases = if spec.aliases.is_empty() {
             String::new()
         } else {
@@ -237,9 +237,7 @@ pub fn render_slash_command_help() -> String {
         };
         out.push_str(&format!(
             "  /{}{hint:<30} {}{}\n",
-            spec.name,
-            spec.summary,
-            aliases,
+            spec.name, spec.summary, aliases,
         ));
     }
     out

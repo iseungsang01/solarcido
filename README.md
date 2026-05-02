@@ -66,8 +66,11 @@ solarcido sessions show latest
 solarcido memory
 ```
 
-For TypeScript compatibility work, the old implementation is still available
-through the existing npm scripts:
+The same config file can also hold MCP server settings under an `mcp` block;
+`solarcido mcp` reports the configured servers.
+
+The TypeScript sources remain in the repo for compatibility checks, but the
+supported CLI entrypoints now launch the Rust binary:
 
 ```bash
 npm run build
@@ -122,9 +125,9 @@ cargo run -p solarcido-cli -- prompt "summarize this repository" --cwd .
 cargo run -p solarcido-cli -- --resume latest prompt "continue"
 ```
 
-The npm bin wrapper also targets the Rust CLI, preferring an existing
+The npm bin wrapper targets the Rust CLI by default, preferring an existing
 `target/release/solarcido` or `target/debug/solarcido` binary and falling back
-to `cargo run -p solarcido-cli --`.
+to `cargo run -p solarcido-cli --` when no compiled binary is present.
 
 ## Notes
 

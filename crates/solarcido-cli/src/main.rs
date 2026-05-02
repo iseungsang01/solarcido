@@ -4,8 +4,8 @@ use solarcido_commands::{
 };
 use solarcido_runtime::{
     get_config_value, new_session_id, set_config_value, system_prompt_with_memory,
-    usage::UsageTracker, ConfigStore, ConversationRuntime, PermissionMode, PermissionPrompter,
-    PermissionRequest, RuntimeStatusEvent, SessionStore, SolarcidoConfig,
+    usage::UsageTracker, ConfigStore, ConversationRuntime, McpToolAdapter, PermissionMode,
+    PermissionPrompter, PermissionRequest, RuntimeStatusEvent, SessionStore, SolarcidoConfig,
     DEFAULT_MAX_OUTPUT_TOKENS,
 };
 use solarcido_tools::WorkspaceTools;
@@ -164,6 +164,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let memory = config_store.load_memory()?;
             run_repl(
+                &config,
                 model,
                 cwd,
                 permission_mode,
@@ -192,7 +193,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             permission_mode,
         } => print_sandbox(output_format, permission_mode)?,
         CliAction::Agents { output_format } => print_agents(output_format)?,
-        CliAction::Mcp { output_format } => print_mcp(output_format)?,
+        CliAction::Mcp { output_format } => print_mcp(&config, output_format)?,
         CliAction::Skills { output_format } => print_skills(output_format)?,
         CliAction::SystemPrompt {
             output_format,
@@ -701,6 +702,7 @@ async fn run_prompt(
 // ---------------------------------------------------------------------------
 
 async fn run_repl(
+    config: &SolarcidoConfig,
     model: String,
     cwd: PathBuf,
     permission_mode: PermissionMode,
@@ -769,6 +771,7 @@ async fn run_repl(
         if trimmed.starts_with('/') {
             if let Some(cmd) = SlashCommand::parse(trimmed) {
                 let handled = handle_slash_command(
+                    config,
                     &cmd.name,
                     &cmd.args,
                     &model,
@@ -863,6 +866,7 @@ enum SlashResult {
 }
 
 fn handle_slash_command(
+    config: &SolarcidoConfig,
     name: &str,
     args: &[String],
     model: &str,
@@ -932,7 +936,7 @@ fn handle_slash_command(
                 SlashResult::Output(format!("config section `{}` not yet implemented", args[0]))
             }
         }
-        "mcp" => SlashResult::Output("MCP server management not yet implemented".to_string()),
+        "mcp" => SlashResult::Output(format_mcp_servers(config, color_enabled)),
         "memory" => SlashResult::Output("memory inspection not yet implemented".to_string()),
         "init" => SlashResult::Output("use `solarcido init` from the CLI instead".to_string()),
         "diff" => SlashResult::Output("diff display not yet implemented".to_string()),
@@ -1025,21 +1029,66 @@ fn print_agents(output_format: OutputFormat) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-fn print_mcp(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+fn print_mcp(
+    config: &SolarcidoConfig,
+    output_format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let adapter = McpToolAdapter::from_config(&config.mcp);
+    let servers = solarcido_runtime::mcp_server_summaries(&adapter);
+    let server_count = servers.len();
     match output_format {
         OutputFormat::Text => {
             println!("Solarcido MCP servers");
-            println!("No MCP servers configured. MCP support is not yet implemented.");
+            if servers.is_empty() {
+                println!("No MCP servers configured.");
+            } else {
+                for server in &servers {
+                    println!(
+                        "{}  transport={}  {}",
+                        server.name, server.transport, server.summary
+                    );
+                }
+            }
         }
         OutputFormat::Json => println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "servers": [],
-                "note": "MCP support not yet implemented"
+                "servers": servers
+                    .iter()
+                    .map(|server| serde_json::json!({
+                        "name": server.name,
+                        "transport": server.transport,
+                        "summary": server.summary
+                    }))
+                    .collect::<Vec<_>>(),
+                "count": server_count
             }))?
         ),
     }
     Ok(())
+}
+
+fn format_mcp_servers(config: &SolarcidoConfig, color_enabled: bool) -> String {
+    let adapter = McpToolAdapter::from_config(&config.mcp);
+    let servers = solarcido_runtime::mcp_server_summaries(&adapter);
+    if servers.is_empty() {
+        return "No MCP servers configured.".to_string();
+    }
+
+    let mut out = String::from("Configured MCP servers:\n");
+    for server in servers {
+        out.push_str(&format!(
+            "  {}  {}  {}\n",
+            paint(color_enabled, ANSI_CYAN, server.name),
+            paint(
+                color_enabled,
+                ANSI_SLATE,
+                format!("transport={}", server.transport)
+            ),
+            paint(color_enabled, ANSI_SLATE, server.summary),
+        ));
+    }
+    out.trim_end().to_string()
 }
 
 fn print_skills(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {

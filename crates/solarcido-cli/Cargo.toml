@@ -17,6 +17,8 @@ solarcido-runtime = { path = "../runtime" }
 solarcido-tools = { path = "../tools" }
 tokio.workspace = true
 
+[dev-dependencies]
+mock-solar-service = { path = "../mock-solar-service" }
+
 [lints]
 workspace = true
-

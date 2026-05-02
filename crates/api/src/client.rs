@@ -39,8 +39,7 @@ impl SolarClient {
     pub fn from_env() -> Result<Self, ApiError> {
         let api_key = read_env_non_empty(API_KEY_ENV)?
             .ok_or_else(|| ApiError::missing_credentials("Upstage", &[API_KEY_ENV]))?;
-        let base_url =
-            std::env::var(BASE_URL_ENV).unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
+        let base_url = std::env::var(BASE_URL_ENV).unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
         Ok(Self::new(api_key, base_url))
     }
 
@@ -124,10 +123,7 @@ impl SolarClient {
         Ok(normalized)
     }
 
-    pub async fn stream_message(
-        &self,
-        request: &MessageRequest,
-    ) -> Result<SolarStream, ApiError> {
+    pub async fn stream_message(&self, request: &MessageRequest) -> Result<SolarStream, ApiError> {
         let response = self
             .send_with_retry(&request.clone().with_streaming())
             .await?;
@@ -210,9 +206,7 @@ fn jitter_for_base(base: Duration) -> Duration {
         .map(|e| u64::try_from(e.as_nanos()).unwrap_or(u64::MAX))
         .unwrap_or(0);
     let tick = JITTER_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let mut mixed = raw
-        .wrapping_add(tick)
-        .wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut mixed = raw.wrapping_add(tick).wrapping_add(0x9E37_79B9_7F4A_7C15);
     mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     mixed ^= mixed >> 31;

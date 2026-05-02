@@ -1,4 +1,4 @@
-# Parity Status — Solarcido Rust Port
+# Parity Status ??Solarcido Rust Port
 
 Last updated: 2026-05-02
 
@@ -15,9 +15,9 @@ Target layout from `docs/RUST_PORT.md`:
 |-------|--------|-------|
 | `api` | real | Solar/OpenAI-compatible client, SSE streaming, error normalization, 17 tests |
 | `commands` | real | Slash command registry, parser, help rendering (text + JSON), 4 tests |
-| `compat-harness` | skeleton | Types + stub `extract_manifest` — deferred to Phase 8 |
-| `mock-solar-service` | partial | Scenario types, completion/SSE builders, builtin scenarios — HTTP server stub only |
-| `plugins` | skeleton | Metadata types, stub registry/manager — deferred to Phase 7 |
+| `compat-harness` | skeleton | Types + stub `extract_manifest` ??deferred to Phase 8 |
+| `mock-solar-service` | partial | Scenario types, completion/SSE builders, builtin scenarios ??HTTP server stub only |
+| `plugins` | skeleton | Metadata types, stub registry/manager ??deferred to Phase 7 |
 | `runtime` | real | ConversationRuntime, permission policy, config loading, memory loading, streaming + non-streaming turn execution, JSONL session snapshots, usage/cost tracking (11 tests) |
 | `solarcido-cli` | real | Default `solarcido` entrypoint, CLI parsing, one-shot prompt, REPL with streaming, `--resume`, full slash dispatch, 11 CLI subcommands |
 | `telemetry` | real | Session tracer, JSONL + memory sinks, token usage, event types |
@@ -29,17 +29,17 @@ Target layout from `docs/RUST_PORT.md`:
 
 | Tool | Location | Behavioral Notes |
 |------|----------|-----------------|
-| **bash** | `tools::WorkspaceTools` | subprocess exec, timeout, Windows PowerShell + Unix sh — basic parity |
-| **read_file** | `tools::WorkspaceTools` | offset/limit read, size limit, path traversal prevention — good parity |
-| **write_file** | `tools::WorkspaceTools` | create/overwrite, size limit, parent dir creation — good parity |
-| **edit_file** | `tools::WorkspaceTools` | old/new string replacement, replace_all, ambiguity rejection — good parity |
-| **glob_search** | `tools::WorkspaceTools` | glob pattern matching, workspace scoping, truncation at 100 — good parity |
-| **grep_search** | `tools::WorkspaceTools` | regex search, glob filter, output modes (files/content/count), case insensitive — good parity |
-| **Sleep** | `tools::WorkspaceTools` | duration_ms with 120s max cap — good parity |
-| **StructuredOutput** | `tools::WorkspaceTools` | passthrough JSON data — good parity |
-| **SendUserMessage** | `tools::WorkspaceTools` | message + status level — good parity |
-| **ToolSearch** | `tools::WorkspaceTools` | keyword search across registered tool specs — good parity |
-| **TodoWrite** | `tools::WorkspaceTools` | accept/return todo list (no persistence yet) — moderate parity |
+| **bash** | `tools::WorkspaceTools` | subprocess exec, timeout, Windows PowerShell + Unix sh ??basic parity |
+| **read_file** | `tools::WorkspaceTools` | offset/limit read, size limit, path traversal prevention ??good parity |
+| **write_file** | `tools::WorkspaceTools` | create/overwrite, size limit, parent dir creation ??good parity |
+| **edit_file** | `tools::WorkspaceTools` | old/new string replacement, replace_all, ambiguity rejection ??good parity |
+| **glob_search** | `tools::WorkspaceTools` | glob pattern matching, workspace scoping, truncation at 100 ??good parity |
+| **grep_search** | `tools::WorkspaceTools` | regex search, glob filter, output modes (files/content/count), case insensitive ??good parity |
+| **Sleep** | `tools::WorkspaceTools` | duration_ms with 120s max cap ??good parity |
+| **StructuredOutput** | `tools::WorkspaceTools` | passthrough JSON data ??good parity |
+| **SendUserMessage** | `tools::WorkspaceTools` | message + status level ??good parity |
+| **ToolSearch** | `tools::WorkspaceTools` | keyword search across registered tool specs ??good parity |
+| **TodoWrite** | `tools::WorkspaceTools` | accept/return todo list (no persistence yet) ??moderate parity |
 
 ### Not Yet Implemented
 
@@ -74,15 +74,15 @@ Target layout from `docs/RUST_PORT.md`:
 All 22 slash command specs are registered in `crates/commands` and all 22 have
 REPL dispatch handlers in `solarcido-cli`. Real handlers with functional output:
 
-- `/help` — renders full slash command help from registry
-- `/status` — shows model, permission mode, reasoning effort, turns
-- `/sandbox` — shows permission mode and OS sandbox status
-- `/model [name]` — shows current model (switching deferred)
-- `/permissions [mode]` — shows current mode (switching deferred)
-- `/clear` — clears terminal via ANSI escape
-- `/cost` — shows cumulative token usage with cost estimate
-- `/version` — prints version
-- `/exit` (`/quit`) — exits the REPL
+- `/help` ??renders full slash command help from registry
+- `/status` ??shows model, permission mode, reasoning effort, turns
+- `/sandbox` ??shows permission mode and OS sandbox status
+- `/model [name]` ??shows current model (switching deferred)
+- `/permissions [mode]` ??shows current mode (switching deferred)
+- `/clear` ??clears terminal via ANSI escape
+- `/cost` ??shows cumulative token usage with cost estimate
+- `/version` ??prints version
+- `/exit` (`/quit`) ??exits the REPL
 
 Stub handlers (return "not yet implemented" messages):
 
@@ -113,8 +113,8 @@ Global option status:
 - `--resume [SESSION.jsonl|session-id|latest]` is real for one-shot prompt and
   REPL startup. Sessions are stored under `<repo>/.solarcido/sessions/`.
 - `package.json` and `install.sh` now route `solarcido` to the Rust binary by
-  default. The TypeScript CLI remains available through `node dist/index.js`
-  for compatibility work.
+  default. The legacy TypeScript sources remain in the repo for compatibility
+  checks, but `node dist/index.js` now launches the Rust CLI.
 
 ## Runtime Capabilities
 
@@ -160,30 +160,35 @@ Global option status:
 
 | Artifact | Status |
 |----------|--------|
-| `crates/mock-solar-service/` library | partial (types + builders, no HTTP server) |
-| `crates/mock-solar-service/` HTTP binary | stub (prints scenario list and exits) |
-| `crates/solarcido-cli/tests/mock_parity_harness.rs` | not started |
-| `scripts/run_mock_parity_harness.sh` | not started |
-| `scripts/run_mock_parity_diff.py` | not started |
-| `mock_parity_scenarios.json` | not started |
+| `crates/mock-solar-service/` library | real |
+| `crates/mock-solar-service/` HTTP binary | real |
+| `crates/solarcido-cli/tests/mock_parity_harness.rs` | real |
+| `scripts/run_mock_parity_harness.sh` | real |
+| `scripts/run_mock_parity_diff.py` | real |
+| `mock_parity_scenarios.json` | real |
 
-### Builtin Mock Scenarios (library only, not harness-tested)
+### Covered Core Scenarios
 
 - `streaming_text`
 - `read_file_roundtrip`
-- `write_file_allowed`
-- `bash_stdout_roundtrip`
-
-### Required Scenarios (from RUST_PORT.md, not yet implemented)
-
 - `grep_chunk_assembly`
+- `write_file_allowed`
 - `write_file_denied`
 - `multi_tool_turn_roundtrip`
+- `bash_stdout_roundtrip`
 - `bash_permission_prompt_approved`
 - `bash_permission_prompt_denied`
+
+### Additional Harness Checks
+
+- `resume_latest_session_roundtrip_keeps_the_previous_session_id`
+- `mcp_command_lists_configured_servers_from_config`
+
+### Remaining Extension-System Gaps
+
 - `plugin_tool_roundtrip`
-- `session_resume_roundtrip`
-- `mcp_tool_roundtrip`
+- `session_resume_roundtrip` as a tool-driven round trip
+- `mcp_tool_roundtrip` as a tool-driven round trip
 
 ## Telemetry
 
@@ -213,13 +218,15 @@ Global option status:
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| 0 — Freeze Decisions | Lock porting contract | complete |
-| 1 — Workspace Reshape | Match reference crate boundaries | complete |
-| 2 — Solar API Adapter | Provider layer with Solar behavior | complete |
-| 3 — Runtime Core | Replace prototype with claw-style runtime | partial (session persistence/resume, config-backed defaults, memory injection, and usage/cost done; tool/plugin injection pending) |
-| 4 — Tools and Permissions | Real local coding-agent parity | partial (11/40 tools) |
-| 5 — CLI and REPL Parity | Binary feels like claw with Solarcido branding | partial (11 CLI commands, 22/22 slash handlers wired) |
-| 6 — Config, Sessions, Memory | Repeated local use stable | complete |
-| 7 — MCP, Plugins, Hooks, Skills | Extension system | not started |
-| 8 — Mock Parity Harness | Deterministic scenario proof | not started |
-| 9 — Migration Gate | Rust replaces TypeScript CLI | not started |
+| 0 ??Freeze Decisions | Lock porting contract | complete |
+| 1 ??Workspace Reshape | Match reference crate boundaries | complete |
+| 2 ??Solar API Adapter | Provider layer with Solar behavior | complete |
+| 3 ??Runtime Core | Replace prototype with claw-style runtime | partial (session persistence/resume, config-backed defaults, memory injection, and usage/cost done; tool/plugin injection pending) |
+| 4 ??Tools and Permissions | Real local coding-agent parity | partial (11/40 tools) |
+| 5 ??CLI and REPL Parity | Binary feels like claw with Solarcido branding | partial (11 CLI commands, 22/22 slash handlers wired) |
+| 6 ??Config, Sessions, Memory | Repeated local use stable | complete |
+| 7 ??MCP, Plugins, Hooks, Skills | Extension system | not started |
+| 8 ??Mock Parity Harness | Deterministic scenario proof | not started |
+| 9 ??Migration Gate | Rust replaces TypeScript CLI | completed |
+
+

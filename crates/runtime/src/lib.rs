@@ -1,9 +1,21 @@
 pub mod config;
+pub mod mcp;
+pub mod mcp_tool_adapter;
 pub mod session;
 pub mod usage;
 
 pub use config::{
     config_keys, get_config_value, set_config_value, ApprovalPolicy, ConfigStore, SolarcidoConfig,
+};
+pub use mcp::{
+    mcp_tool_name, mcp_tool_prefix, normalize_name_for_mcp, scoped_mcp_config_hash,
+    McpConfigCollection, McpConnectionManager, McpConnectionStatus, McpRemoteServerConfig,
+    McpResourceInfo, McpSdkServerConfig, McpServerConfig, McpServerState, McpStdioServerConfig,
+    McpToolInfo, McpWebSocketServerConfig,
+};
+pub use mcp_tool_adapter::{
+    mcp_server_summaries, render_mcp_server_summary_json, render_mcp_server_summary_text,
+    McpServerSummary, McpToolAdapter,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

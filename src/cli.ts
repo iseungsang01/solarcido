@@ -56,6 +56,9 @@ export function printHelp(): void {
   console.log(`
 solarcido
 
+Legacy TypeScript CLI.
+The Rust CLI under crates/solarcido-cli is the supported default entrypoint.
+
 Usage:
   solarcido
   solarcido run "your goal" [--cwd .] [--reasoning low|medium|high] [--model name] [--approval-policy on-failure] [--sandbox workspace-write] [--quiet]

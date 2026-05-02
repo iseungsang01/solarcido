@@ -10,7 +10,7 @@
   "scripts": {
     "build": "npx tsc -p tsconfig.json",
     "build:rust": "cargo build -p solarcido-cli",
-    "dev": "tsx src/index.ts",
+    "dev": "node bin/solarcido.js",
     "start": "node bin/solarcido.js",
     "test": "npm run build && node tests/cli.test.mjs && node tests/config.test.mjs && node tests/approvals.test.mjs && node tests/sessions.test.mjs && node tests/tools.test.mjs && node tests/execution-guard.test.mjs",
     "typecheck": "npx tsc --noEmit -p tsconfig.json"

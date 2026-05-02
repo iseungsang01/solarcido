@@ -1,3 +1,4 @@
+use crate::mcp::McpConfigCollection;
 use crate::{PermissionMode, RuntimeError};
 use serde::{Deserialize, Serialize};
 use solarcido_api::{ReasoningEffort, DEFAULT_MODEL};
@@ -46,6 +47,8 @@ pub struct SolarcidoConfig {
     pub approval_policy: ApprovalPolicy,
     pub sandbox: PermissionMode,
     pub quiet: bool,
+    #[serde(default)]
+    pub mcp: McpConfigCollection,
 }
 
 impl Default for SolarcidoConfig {
@@ -56,6 +59,7 @@ impl Default for SolarcidoConfig {
             approval_policy: ApprovalPolicy::OnFailure,
             sandbox: PermissionMode::WorkspaceWrite,
             quiet: false,
+            mcp: McpConfigCollection::default(),
         }
     }
 }
@@ -147,6 +151,7 @@ pub fn config_keys() -> &'static [&'static str] {
         "approvalPolicy",
         "sandbox",
         "quiet",
+        "mcp",
     ]
 }
 
@@ -168,6 +173,8 @@ pub fn get_config_value(
             config.sandbox.as_str().to_string(),
         )),
         Some("quiet") => Ok(serde_json::Value::Bool(config.quiet)),
+        Some("mcp") => serde_json::to_value(&config.mcp)
+            .map_err(|error| RuntimeError::new(format!("failed to encode MCP config: {error}"))),
         Some(key) => Err(unknown_config_key(key)),
     }
 }
@@ -204,6 +211,11 @@ pub fn set_config_value(
             "false" => config.quiet = false,
             _ => return Err(RuntimeError::new("quiet must be true or false")),
         },
+        "mcp" => {
+            return Err(RuntimeError::new(
+                "mcp config is managed as JSON; edit ~/.solarcido/config.json directly to change servers",
+            ));
+        }
         key => return Err(unknown_config_key(key)),
     }
     Ok(config)
@@ -271,6 +283,12 @@ fn validate_config_value(
             .as_bool()
             .ok_or_else(|| RuntimeError::new("quiet must be a boolean"))?;
     }
+    if let Some(value) = object.get("mcp") {
+        let mcp = serde_json::from_value::<McpConfigCollection>(value.clone())
+            .map_err(|error| RuntimeError::new(format!("invalid mcp config: {error}")))?;
+        mcp.validate()?;
+        config.mcp = mcp;
+    }
     Ok(config)
 }
 
@@ -334,6 +352,24 @@ mod tests {
         store.save(&config).unwrap();
         let loaded = store.load().unwrap();
         assert_eq!(loaded.model, "solar-test");
+        let _ = fs::remove_dir_all(store.home());
+    }
+
+    #[test]
+    fn round_trips_mcp_config() {
+        let store = temp_store("mcp");
+        let mut config = SolarcidoConfig::default();
+        config.mcp = McpConfigCollection {
+            servers: std::collections::BTreeMap::from([(
+                "alpha".to_string(),
+                crate::mcp::McpServerConfig::Sdk(crate::mcp::McpSdkServerConfig {
+                    name: "alpha-sdk".to_string(),
+                }),
+            )]),
+        };
+        store.save(&config).unwrap();
+        let loaded = store.load().unwrap();
+        assert!(loaded.mcp.servers.contains_key("alpha"));
         let _ = fs::remove_dir_all(store.home());
     }
 }

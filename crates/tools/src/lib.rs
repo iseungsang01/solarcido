@@ -356,9 +356,13 @@ impl WorkspaceTools {
     fn read_file(&self, input: &Value) -> Result<String, ToolError> {
         let path = string_arg(input, "path")?;
         let offset = input.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
-        let limit = input.get("limit").and_then(Value::as_u64).map(|value| value as usize);
+        let limit = input
+            .get("limit")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize);
         let resolved = self.resolve_existing(path)?;
-        let metadata = std::fs::metadata(&resolved).map_err(|error| ToolError::new(error.to_string()))?;
+        let metadata =
+            std::fs::metadata(&resolved).map_err(|error| ToolError::new(error.to_string()))?;
         if metadata.len() > MAX_READ_BYTES {
             return Err(ToolError::new(format!(
                 "file is too large ({} bytes, max {} bytes)",
@@ -366,8 +370,8 @@ impl WorkspaceTools {
                 MAX_READ_BYTES
             )));
         }
-        let content =
-            std::fs::read_to_string(&resolved).map_err(|error| ToolError::new(error.to_string()))?;
+        let content = std::fs::read_to_string(&resolved)
+            .map_err(|error| ToolError::new(error.to_string()))?;
         let lines = content.lines().collect::<Vec<_>>();
         let end = limit
             .map(|limit| offset.saturating_add(limit).min(lines.len()))
@@ -426,8 +430,8 @@ impl WorkspaceTools {
             return Err(ToolError::new("old_string must not be empty"));
         }
         let resolved = self.resolve_existing(path)?;
-        let original =
-            std::fs::read_to_string(&resolved).map_err(|error| ToolError::new(error.to_string()))?;
+        let original = std::fs::read_to_string(&resolved)
+            .map_err(|error| ToolError::new(error.to_string()))?;
         let matches = original.matches(old).count();
         if matches == 0 {
             return Err(ToolError::new("old_string not found in file"));
@@ -461,7 +465,9 @@ impl WorkspaceTools {
             .map_or_else(|| Ok(self.cwd.clone()), |path| self.resolve_existing(path))?;
         let search_pattern = base.join(pattern).to_string_lossy().to_string();
         let mut files = Vec::new();
-        for entry in glob::glob(&search_pattern).map_err(|error| ToolError::new(error.to_string()))? {
+        for entry in
+            glob::glob(&search_pattern).map_err(|error| ToolError::new(error.to_string()))?
+        {
             let entry = entry.map_err(|error| ToolError::new(error.to_string()))?;
             if entry.is_file() {
                 self.ensure_inside(&entry)?;

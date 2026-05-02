@@ -162,7 +162,10 @@ impl MemoryTelemetrySink {
 
     #[must_use]
     pub fn drain(&self) -> Vec<SessionTraceRecord> {
-        self.records.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default()
+        self.records
+            .lock()
+            .map(|mut g| g.drain(..).collect())
+            .unwrap_or_default()
     }
 }
 

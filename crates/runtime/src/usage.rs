@@ -83,8 +83,7 @@ impl TokenUsage {
             || self.estimate_cost_usd(),
             |p| self.estimate_cost_usd_with_pricing(p),
         );
-        let model_suffix =
-            model.map_or_else(String::new, |name| format!(" model={name}"));
+        let model_suffix = model.map_or_else(String::new, |name| format!(" model={name}"));
         let pricing_suffix = if pricing.is_some() {
             ""
         } else if model.is_some() {
