@@ -210,7 +210,10 @@ pub struct ConversationRuntime<T> {
     tool_executor: T,
     permission_policy: PermissionPolicy,
     max_iterations: usize,
+    max_output_tokens: u32,
 }
+
+pub const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 4096;
 
 impl<T> ConversationRuntime<T>
 where
@@ -238,12 +241,19 @@ where
             tool_executor,
             permission_policy,
             max_iterations: 128,
+            max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
         }
     }
 
     #[must_use]
     pub fn with_session(mut self, session: Session) -> Self {
         self.session = session;
+        self
+    }
+
+    #[must_use]
+    pub fn with_max_output_tokens(mut self, max_output_tokens: u32) -> Self {
+        self.max_output_tokens = max_output_tokens;
         self
     }
 
@@ -271,7 +281,7 @@ where
     fn build_request(&self) -> MessageRequest {
         MessageRequest {
             model: self.model.clone(),
-            max_tokens: 16384,
+            max_tokens: self.max_output_tokens,
             messages: self.session.messages.clone(),
             system: Some(self.system_prompt.clone()),
             tools: Some(self.tool_executor.definitions()),

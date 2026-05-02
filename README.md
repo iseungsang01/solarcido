@@ -67,6 +67,7 @@ node dist/index.js --help
 - `--cwd`: working directory
 - `--reasoning-effort`: `low | medium | high`
 - `--model`: model to use for the coding assistant
+- `--max-output-tokens`: maximum response tokens to request from Solar Pro, default `4096`
 - `--permission-mode`: `read-only | workspace-write | danger-full-access`
 - `--output-format`: `text | json`
 - `--resume`: `latest`, a session id, or a `.jsonl` session path
@@ -97,6 +98,7 @@ to `cargo run -p solarcido-cli --`.
 ## Notes
 
 - The default model is `solar-pro3-260323`.
+- Solar Pro's model context window is fixed by the provider. Solarcido defaults to a 4K output budget so more of that window is available for prompts, session history, and tool results. Set `--max-output-tokens` or `SOLARCIDO_MAX_OUTPUT_TOKENS` when you need a different output budget.
 - The assistant uses repository tools for file listing, code search, line-window reads, focused string edits, whole-file writes, command execution, and task completion.
 - For change requests, the workflow rejects a premature `finish` until a file edit or write has succeeded, so the assistant cannot stop at expected actions only.
 - Command failures are returned to the assistant as structured output instead of crashing the workflow.

@@ -5,6 +5,7 @@ use solarcido_commands::{
 use solarcido_runtime::{
     default_system_prompt, new_session_id, usage::UsageTracker, ConversationRuntime,
     PermissionMode, PermissionPrompter, PermissionRequest, RuntimeStatusEvent, SessionStore,
+    DEFAULT_MAX_OUTPUT_TOKENS,
 };
 use solarcido_tools::WorkspaceTools;
 use std::io::{self, IsTerminal, Write};
@@ -17,6 +18,7 @@ const ANSI_SLATE: &str = "\x1b[38;5;244m";
 const ANSI_YELLOW_BOLD: &str = "\x1b[38;5;220m\x1b[1m";
 const ANSI_AMBER_BOLD: &str = "\x1b[38;5;214m\x1b[1m";
 const ANSI_CYAN_BOLD: &str = "\x1b[38;5;87m\x1b[1m";
+const SOLAR_PRO_MAX_OUTPUT_TOKENS: u32 = 16_384;
 
 const LOGO_LINES: &[&str] = &[
     "   _____       __               _     __",
@@ -41,6 +43,7 @@ enum CliAction {
         output_format: OutputFormat,
         permission_mode: PermissionMode,
         reasoning_effort: ReasoningEffort,
+        max_output_tokens: u32,
         resume: Option<String>,
     },
     Repl {
@@ -48,6 +51,7 @@ enum CliAction {
         cwd: PathBuf,
         permission_mode: PermissionMode,
         reasoning_effort: ReasoningEffort,
+        max_output_tokens: u32,
         resume: Option<String>,
     },
     Status {
@@ -55,6 +59,7 @@ enum CliAction {
         output_format: OutputFormat,
         permission_mode: PermissionMode,
         reasoning_effort: ReasoningEffort,
+        max_output_tokens: u32,
     },
     Sandbox {
         output_format: OutputFormat,
@@ -104,6 +109,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             output_format,
             permission_mode,
             reasoning_effort,
+            max_output_tokens,
             resume,
         } => {
             run_prompt(
@@ -113,6 +119,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 output_format,
                 permission_mode,
                 reasoning_effort,
+                max_output_tokens,
                 resume.as_deref(),
             )
             .await?;
@@ -122,6 +129,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             cwd,
             permission_mode,
             reasoning_effort,
+            max_output_tokens,
             resume,
         } => {
             run_repl(
@@ -129,6 +137,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 cwd,
                 permission_mode,
                 reasoning_effort,
+                max_output_tokens,
                 resume.as_deref(),
             )
             .await?
@@ -138,7 +147,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             output_format,
             permission_mode,
             reasoning_effort,
-        } => print_status(&model, output_format, permission_mode, reasoning_effort)?,
+            max_output_tokens,
+        } => print_status(
+            &model,
+            output_format,
+            permission_mode,
+            reasoning_effort,
+            max_output_tokens,
+        )?,
         CliAction::Sandbox {
             output_format,
             permission_mode,
@@ -214,6 +230,7 @@ fn print_shell_header(
     cwd: &std::path::Path,
     permission_mode: PermissionMode,
     reasoning_effort: ReasoningEffort,
+    max_output_tokens: u32,
     color_enabled: bool,
 ) {
     print_logo(color_enabled);
@@ -241,6 +258,7 @@ fn print_shell_header(
     print_shell_setting("model", model, color_enabled);
     print_shell_setting("cwd", cwd.display().to_string(), color_enabled);
     print_shell_setting("reasoning", reasoning_effort.as_str(), color_enabled);
+    print_shell_setting("max output", max_output_tokens.to_string(), color_enabled);
     print_shell_setting("permission", permission_mode.as_str(), color_enabled);
     println!();
 }
@@ -283,6 +301,7 @@ fn format_repl_status(
     model: &str,
     permission_mode: PermissionMode,
     reasoning_effort: ReasoningEffort,
+    max_output_tokens: u32,
     turns: u32,
     color_enabled: bool,
 ) -> String {
@@ -290,6 +309,7 @@ fn format_repl_status(
         format_status_line("model", model, color_enabled),
         format_status_line("permission", permission_mode.as_str(), color_enabled),
         format_status_line("reasoning", reasoning_effort.as_str(), color_enabled),
+        format_status_line("max output", max_output_tokens.to_string(), color_enabled),
         format_status_line("turns", turns.to_string(), color_enabled),
     ]
     .join("\n")
@@ -309,6 +329,10 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
     let mut output_format = OutputFormat::Text;
     let mut permission_mode = PermissionMode::DangerFullAccess;
     let mut reasoning_effort = ReasoningEffort::Medium;
+    let mut max_output_tokens = match std::env::var("SOLARCIDO_MAX_OUTPUT_TOKENS") {
+        Ok(value) => parse_max_output_tokens(&value)?,
+        Err(_) => DEFAULT_MAX_OUTPUT_TOKENS,
+    };
     let mut resume = None;
     let mut positionals = Vec::new();
     let mut index = 0usize;
@@ -356,6 +380,13 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
                 )
                 .map_err(|error| error.to_string())?;
             }
+            "--max-output-tokens" | "--max-tokens" => {
+                index += 1;
+                max_output_tokens = parse_max_output_tokens(
+                    args.get(index)
+                        .ok_or("--max-output-tokens requires a value")?,
+                )?;
+            }
             "--allowedTools" | "--allowed-tools" => {
                 index += 1;
                 let _ = args.get(index).ok_or("--allowedTools requires a value")?;
@@ -383,6 +414,7 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
             cwd,
             permission_mode,
             reasoning_effort,
+            max_output_tokens,
             resume,
         });
     }
@@ -400,6 +432,7 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
                 output_format,
                 permission_mode,
                 reasoning_effort,
+                max_output_tokens,
                 resume,
             })
         }
@@ -408,6 +441,7 @@ fn parse_args(args: Vec<String>) -> Result<CliAction, String> {
             output_format,
             permission_mode,
             reasoning_effort,
+            max_output_tokens,
         }),
         "sandbox" => Ok(CliAction::Sandbox {
             output_format,
@@ -437,6 +471,21 @@ fn parse_output_format(value: &str) -> Result<OutputFormat, String> {
     }
 }
 
+fn parse_max_output_tokens(value: &str) -> Result<u32, String> {
+    let parsed = value
+        .parse::<u32>()
+        .map_err(|_| format!("invalid max output tokens `{value}`; expected a positive integer"))?;
+    if parsed == 0 {
+        return Err("max output tokens must be greater than zero".to_string());
+    }
+    if parsed > SOLAR_PRO_MAX_OUTPUT_TOKENS {
+        return Err(format!(
+            "max output tokens must be at most {SOLAR_PRO_MAX_OUTPUT_TOKENS} for Solar Pro"
+        ));
+    }
+    Ok(parsed)
+}
+
 // ---------------------------------------------------------------------------
 // One-shot prompt
 // ---------------------------------------------------------------------------
@@ -448,6 +497,7 @@ async fn run_prompt(
     output_format: OutputFormat,
     permission_mode: PermissionMode,
     reasoning_effort: ReasoningEffort,
+    max_output_tokens: u32,
     resume: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = SolarClient::from_env()?;
@@ -467,7 +517,8 @@ async fn run_prompt(
         default_system_prompt(permission_mode),
         tools,
         permission_mode,
-    );
+    )
+    .with_max_output_tokens(max_output_tokens);
     if let Some(snapshot) = loaded {
         runtime = runtime.with_session(snapshot.session());
     }
@@ -538,6 +589,7 @@ async fn run_repl(
     cwd: PathBuf,
     permission_mode: PermissionMode,
     reasoning_effort: ReasoningEffort,
+    max_output_tokens: u32,
     resume: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let color_enabled = io::stdout().is_terminal();
@@ -546,6 +598,7 @@ async fn run_repl(
         &cwd,
         permission_mode,
         reasoning_effort,
+        max_output_tokens,
         color_enabled,
     );
 
@@ -566,7 +619,8 @@ async fn run_repl(
         default_system_prompt(permission_mode),
         tools,
         permission_mode,
-    );
+    )
+    .with_max_output_tokens(max_output_tokens);
     if let Some(snapshot) = loaded {
         runtime = runtime.with_session(snapshot.session());
         print_shell_setting("session", format!("resumed {session_id}"), color_enabled);
@@ -603,6 +657,7 @@ async fn run_repl(
                     &model,
                     permission_mode,
                     reasoning_effort,
+                    max_output_tokens,
                     &usage_tracker,
                     color_enabled,
                 );
@@ -696,6 +751,7 @@ fn handle_slash_command(
     model: &str,
     permission_mode: PermissionMode,
     reasoning_effort: ReasoningEffort,
+    max_output_tokens: u32,
     usage_tracker: &UsageTracker,
     color_enabled: bool,
 ) -> SlashResult {
@@ -710,6 +766,7 @@ fn handle_slash_command(
             model,
             permission_mode,
             reasoning_effort,
+            max_output_tokens,
             usage_tracker.turns(),
             color_enabled,
         )),
@@ -783,6 +840,7 @@ fn print_status(
     output_format: OutputFormat,
     permission_mode: PermissionMode,
     reasoning_effort: ReasoningEffort,
+    max_output_tokens: u32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match output_format {
         OutputFormat::Text => {
@@ -791,6 +849,7 @@ fn print_status(
             println!("provider: Upstage Solar OpenAI-compatible");
             println!("permission_mode: {}", permission_mode.as_str());
             println!("reasoning_effort: {}", reasoning_effort.as_str());
+            println!("max_output_tokens: {max_output_tokens}");
         }
         OutputFormat::Json => println!(
             "{}",
@@ -798,7 +857,8 @@ fn print_status(
                 "model": model,
                 "provider": "upstage-solar",
                 "permission_mode": permission_mode.as_str(),
-                "reasoning_effort": reasoning_effort.as_str()
+                "reasoning_effort": reasoning_effort.as_str(),
+                "max_output_tokens": max_output_tokens
             }))?
         ),
     }
@@ -964,6 +1024,7 @@ fn print_help(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Err
                  \x20 --permission-mode read-only|workspace-write|danger-full-access\n\
                  \x20 --dangerously-skip-permissions\n\
                  \x20 --reasoning-effort low|medium|high\n\
+                 \x20 --max-output-tokens N\n\
                  \x20 --resume [SESSION.jsonl|session-id|latest]\n\
                  \x20 --cwd PATH\n\
                  \x20 --allowedTools TOOLS\n\
@@ -977,7 +1038,7 @@ fn print_help(output_format: OutputFormat) -> Result<(), Box<dyn std::error::Err
                 "{}",
                 serde_json::to_string_pretty(&serde_json::json!({
                     "commands": ["prompt", "run", "status", "sandbox", "agents", "mcp", "skills", "system-prompt", "init", "help", "version"],
-                    "options": ["--model", "--output-format", "--permission-mode", "--dangerously-skip-permissions", "--reasoning-effort", "--resume", "--cwd", "--allowedTools"],
+                    "options": ["--model", "--output-format", "--permission-mode", "--dangerously-skip-permissions", "--reasoning-effort", "--max-output-tokens", "--resume", "--cwd", "--allowedTools"],
                     "slash_commands": commands_json["commands"]
                 }))?
             );
