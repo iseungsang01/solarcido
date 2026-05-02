@@ -9,7 +9,7 @@ import {
 import type { ApprovalPolicy, SandboxMode } from "../config/schema.js";
 import { completeSession, createSession, failSession } from "../sessions/session-store.js";
 import { createSolarClient, runSolarChat } from "../solar/client.js";
-import { DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
+import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
 import { createToolDefinitions, executeToolCall, type FinishPayload } from "../tools/registry.js";
 
 /**
@@ -38,6 +38,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   const model = options.model;
   const approvalPolicy = options.approvalPolicy ?? "on-failure";
   const sandbox = options.sandbox ?? "workspace-write";
+  const selectedModel = model ?? DEFAULT_MODEL;
   const session = await createSession({
     goal: options.goal,
     cwd,
@@ -86,14 +87,22 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
 
   try {
     while (true) {
-      const response = await runSolarChat(client, {
-        model,
-        messages,
-        tools,
-        toolChoice: "auto",
-        reasoningEffort,
-        temperature: 0.2,
-      });
+      const response = await waitForSolarResponse(
+        () =>
+          runSolarChat(client, {
+            model,
+            messages,
+            tools,
+            toolChoice: "auto",
+            reasoningEffort,
+            temperature: 0.2,
+          }),
+        {
+          quiet: options.quiet,
+          model: selectedModel,
+          reasoningEffort,
+        },
+      );
 
       const message = response.choices[0]?.message;
 
@@ -172,6 +181,55 @@ function summarizeToolOutput(content: string): string {
   const lines = trimmed.split(/\r?\n/);
   if (lines.length === 1) return cap(lines[0], 200);
   return `${cap(lines[0], 160)}  [+${lines.length - 1} more lines]`;
+}
+
+const SOLAR_WAIT_NOTICE_MS = 5_000;
+const SOLAR_WAIT_INTERVAL_MS = 15_000;
+
+async function waitForSolarResponse<T>(
+  request: () => Promise<T>,
+  options: { quiet?: boolean; model: string; reasoningEffort: ReasoningEffort },
+): Promise<T> {
+  const startedAt = Date.now();
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  let intervalTimer: ReturnType<typeof setInterval> | undefined;
+  let printedWaitNotice = false;
+
+  if (!options.quiet) {
+    console.log(
+      `[status] Sending request to Solar API (model=${options.model}, reasoning=${options.reasoningEffort})...`,
+    );
+
+    noticeTimer = setTimeout(() => {
+      printedWaitNotice = true;
+      console.log(`[status] Waiting for Solar response (${formatElapsed(Date.now() - startedAt)} elapsed)...`);
+      intervalTimer = setInterval(() => {
+        console.log(`[status] Still waiting for Solar response (${formatElapsed(Date.now() - startedAt)} elapsed)...`);
+      }, SOLAR_WAIT_INTERVAL_MS);
+    }, SOLAR_WAIT_NOTICE_MS);
+  }
+
+  try {
+    const response = await request();
+
+    if (!options.quiet && printedWaitNotice) {
+      console.log(`[status] Solar response received after ${formatElapsed(Date.now() - startedAt)}.`);
+    }
+
+    return response;
+  } finally {
+    if (noticeTimer) clearTimeout(noticeTimer);
+    if (intervalTimer) clearInterval(intervalTimer);
+  }
+}
+
+function formatElapsed(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.round(milliseconds / 1_000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
 }
 
 /**

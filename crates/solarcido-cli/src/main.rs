@@ -4,7 +4,7 @@ use solarcido_commands::{
 };
 use solarcido_runtime::{
     default_system_prompt, new_session_id, usage::UsageTracker, ConversationRuntime,
-    PermissionMode, PermissionPrompter, PermissionRequest, SessionStore,
+    PermissionMode, PermissionPrompter, PermissionRequest, RuntimeStatusEvent, SessionStore,
 };
 use solarcido_tools::WorkspaceTools;
 use std::io::{self, IsTerminal, Write};
@@ -476,17 +476,24 @@ async fn run_prompt(
 
     let summary = if use_streaming {
         runtime
-            .run_turn_streaming(prompt, Some(&mut prompter), |event| {
-                if let StreamEvent::ContentBlockDelta(ref delta) = event {
-                    if let ContentBlockDelta::TextDelta { ref text } = delta.delta {
-                        print!("{text}");
-                        let _ = io::stdout().flush();
+            .run_turn_streaming_with_status(
+                prompt,
+                Some(&mut prompter),
+                |event| {
+                    if let StreamEvent::ContentBlockDelta(ref delta) = event {
+                        if let ContentBlockDelta::TextDelta { ref text } = delta.delta {
+                            print!("{text}");
+                            let _ = io::stdout().flush();
+                        }
                     }
-                }
-            })
+                },
+                |event| print_api_status(event, model, reasoning_effort),
+            )
             .await?
     } else {
-        runtime.run_turn(prompt, Some(&mut prompter)).await?
+        runtime
+            .run_turn_with_status(prompt, Some(&mut prompter), |_| {})
+            .await?
     };
     let session_path = session_store.save(&runtime.snapshot(&session_id))?;
 
@@ -613,14 +620,19 @@ async fn run_repl(
         }
 
         let summary = runtime
-            .run_turn_streaming(trimmed, Some(&mut prompter), |event| {
-                if let StreamEvent::ContentBlockDelta(ref delta) = event {
-                    if let ContentBlockDelta::TextDelta { ref text } = delta.delta {
-                        print!("{text}");
-                        let _ = io::stdout().flush();
+            .run_turn_streaming_with_status(
+                trimmed,
+                Some(&mut prompter),
+                |event| {
+                    if let StreamEvent::ContentBlockDelta(ref delta) = event {
+                        if let ContentBlockDelta::TextDelta { ref text } = delta.delta {
+                            print!("{text}");
+                            let _ = io::stdout().flush();
+                        }
                     }
-                }
-            })
+                },
+                |event| print_api_status(event, &model, reasoning_effort),
+            )
             .await?;
 
         usage_tracker.record(solarcido_runtime::usage::TokenUsage {
@@ -637,6 +649,35 @@ async fn run_repl(
         eprintln!("[session] {}", session_path.display());
     }
     Ok(())
+}
+
+fn print_api_status(event: RuntimeStatusEvent, model: &str, reasoning_effort: ReasoningEffort) {
+    match event {
+        RuntimeStatusEvent::ApiRequestStarted { iteration } => eprintln!(
+            "[status] Sending request to Solar API (model={model}, reasoning={}, iteration={iteration})...",
+            reasoning_effort.as_str()
+        ),
+        RuntimeStatusEvent::ApiRequestWaiting { elapsed, .. } => eprintln!(
+            "[status] Waiting for Solar response ({} elapsed)...",
+            format_elapsed(elapsed)
+        ),
+        RuntimeStatusEvent::ApiRequestFinished { elapsed, .. } => eprintln!(
+            "[status] Solar response received after {}.",
+            format_elapsed(elapsed)
+        ),
+    }
+}
+
+fn format_elapsed(duration: std::time::Duration) -> String {
+    let total_seconds = duration.as_secs();
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+
+    if minutes == 0 {
+        format!("{seconds}s")
+    } else {
+        format!("{minutes}m {seconds}s")
+    }
 }
 
 // ---------------------------------------------------------------------------

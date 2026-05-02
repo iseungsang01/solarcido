@@ -9,6 +9,8 @@ use solarcido_api::{
 };
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
+use std::future::Future;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PermissionMode {
@@ -192,6 +194,13 @@ pub struct TurnSummary {
     pub usage: Usage,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeStatusEvent {
+    ApiRequestStarted { iteration: usize },
+    ApiRequestWaiting { iteration: usize, elapsed: Duration },
+    ApiRequestFinished { iteration: usize, elapsed: Duration },
+}
+
 pub struct ConversationRuntime<T> {
     client: SolarClient,
     model: String,
@@ -277,8 +286,21 @@ where
     pub async fn run_turn(
         &mut self,
         user_input: impl Into<String>,
-        mut prompter: Option<&mut dyn PermissionPrompter>,
+        prompter: Option<&mut dyn PermissionPrompter>,
     ) -> Result<TurnSummary, RuntimeError> {
+        self.run_turn_with_status(user_input, prompter, |_| {})
+            .await
+    }
+
+    pub async fn run_turn_with_status<F>(
+        &mut self,
+        user_input: impl Into<String>,
+        mut prompter: Option<&mut dyn PermissionPrompter>,
+        mut on_status: F,
+    ) -> Result<TurnSummary, RuntimeError>
+    where
+        F: FnMut(RuntimeStatusEvent),
+    {
         self.session
             .messages
             .push(InputMessage::user_text(user_input));
@@ -293,11 +315,13 @@ where
             }
 
             let request = self.build_request();
-            let response = self
-                .client
-                .send_message(&request)
-                .await
-                .map_err(|e| RuntimeError::new(e.to_string()))?;
+            let response = wait_for_api_response(
+                self.client.send_message(&request),
+                summary.iterations,
+                &mut on_status,
+            )
+            .await
+            .map_err(|e| RuntimeError::new(e.to_string()))?;
 
             summary.usage.prompt_tokens += response.usage.prompt_tokens;
             summary.usage.completion_tokens += response.usage.completion_tokens;
@@ -372,11 +396,26 @@ where
     pub async fn run_turn_streaming<F>(
         &mut self,
         user_input: impl Into<String>,
-        mut prompter: Option<&mut dyn PermissionPrompter>,
-        mut on_event: F,
+        prompter: Option<&mut dyn PermissionPrompter>,
+        on_event: F,
     ) -> Result<TurnSummary, RuntimeError>
     where
         F: FnMut(&StreamEvent),
+    {
+        self.run_turn_streaming_with_status(user_input, prompter, on_event, |_| {})
+            .await
+    }
+
+    pub async fn run_turn_streaming_with_status<F, G>(
+        &mut self,
+        user_input: impl Into<String>,
+        mut prompter: Option<&mut dyn PermissionPrompter>,
+        mut on_event: F,
+        mut on_status: G,
+    ) -> Result<TurnSummary, RuntimeError>
+    where
+        F: FnMut(&StreamEvent),
+        G: FnMut(RuntimeStatusEvent),
     {
         self.session
             .messages
@@ -392,11 +431,13 @@ where
             }
 
             let request = self.build_request();
-            let mut stream = self
-                .client
-                .stream_message(&request)
-                .await
-                .map_err(|e| RuntimeError::new(e.to_string()))?;
+            let mut stream = wait_for_api_response(
+                self.client.stream_message(&request),
+                summary.iterations,
+                &mut on_status,
+            )
+            .await
+            .map_err(|e| RuntimeError::new(e.to_string()))?;
 
             let mut content = String::new();
             let mut tool_uses: BTreeMap<u32, StreamingToolUse> = BTreeMap::new();
@@ -505,6 +546,58 @@ where
                 self.session
                     .messages
                     .push(InputMessage::user_tool_result(id, output, false));
+            }
+        }
+    }
+}
+
+async fn wait_for_api_response<T, E, Fut, F>(
+    future: Fut,
+    iteration: usize,
+    on_status: &mut F,
+) -> Result<T, E>
+where
+    Fut: Future<Output = Result<T, E>>,
+    F: FnMut(RuntimeStatusEvent),
+{
+    const WAIT_NOTICE: Duration = Duration::from_secs(5);
+    const WAIT_INTERVAL: Duration = Duration::from_secs(15);
+
+    on_status(RuntimeStatusEvent::ApiRequestStarted { iteration });
+
+    let started_at = Instant::now();
+    let notice = tokio::time::sleep(WAIT_NOTICE);
+    let mut heartbeat = tokio::time::interval(WAIT_INTERVAL);
+    heartbeat.tick().await;
+
+    tokio::pin!(future);
+    tokio::pin!(notice);
+
+    let mut printed_wait_notice = false;
+
+    loop {
+        tokio::select! {
+            result = &mut future => {
+                if printed_wait_notice {
+                    on_status(RuntimeStatusEvent::ApiRequestFinished {
+                        iteration,
+                        elapsed: started_at.elapsed(),
+                    });
+                }
+                return result;
+            }
+            () = &mut notice, if !printed_wait_notice => {
+                printed_wait_notice = true;
+                on_status(RuntimeStatusEvent::ApiRequestWaiting {
+                    iteration,
+                    elapsed: started_at.elapsed(),
+                });
+            }
+            _ = heartbeat.tick(), if printed_wait_notice => {
+                on_status(RuntimeStatusEvent::ApiRequestWaiting {
+                    iteration,
+                    elapsed: started_at.elapsed(),
+                });
             }
         }
     }
