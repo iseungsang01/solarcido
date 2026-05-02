@@ -333,14 +333,127 @@ function printStatus(session: InteractiveOptions): void {
   console.log(`  ${ANSI.slate}quiet${ANSI.reset}      ${session.quiet ? "on" : "off"}`);
 }
 
-function executeSlashCommand(
+async function promptForReasoningLevel(current: ReasoningEffort): Promise<ReasoningEffort | undefined> {
+  const choices: ReasoningEffort[] = ["high", "medium", "low"];
+  let selectedIndex = Math.max(0, choices.indexOf(current));
+  const menuLines = 5;
+
+  return new Promise<ReasoningEffort | undefined>((resolve) => {
+    let open = false;
+    let finished = false;
+    let escState: "none" | "esc" | "csi" = "none";
+
+    if (input.isTTY) input.setRawMode(true);
+    input.resume();
+    input.setEncoding("utf8");
+
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      input.removeListener("data", onData);
+    };
+
+    const clearMenu = () => {
+      if (!open) return;
+      output.write(`${ESC}[${menuLines}A`);
+      for (let line = 0; line < menuLines; line += 1) {
+        output.write(`\r${ESC}[K`);
+        if (line < menuLines - 1) {
+          output.write(`\r\n`);
+        }
+      }
+      output.write(`${ESC}[${menuLines - 1}A`);
+      open = false;
+    };
+
+    const drawMenu = (): void => {
+      if (open) {
+        clearMenu();
+      }
+
+      const renderChoice = (level: ReasoningEffort, isSelected: boolean, isCurrent: boolean): string => {
+        const marker = isSelected ? `${ANSI.amber}>${ANSI.reset}` : " ";
+        const label = isSelected ? `${ANSI.bold}${level}${ANSI.reset}` : level;
+        const current = isCurrent ? ` ${ANSI.dim}(current)${ANSI.reset}` : "";
+        return `  ${marker} ${label}${current}`;
+      };
+
+      output.write(`\r${ESC}[K${ANSI.slate}choose reasoning level${ANSI.reset}`);
+      output.write(`\r\n${ESC}[K${renderChoice("high", selectedIndex === 0, current === "high")}`);
+      output.write(`\r\n${ESC}[K${renderChoice("medium", selectedIndex === 1, current === "medium")}`);
+      output.write(`\r\n${ESC}[K${renderChoice("low", selectedIndex === 2, current === "low")}`);
+      output.write(`\r\n${ESC}[K  ${ANSI.dim}Use ↑/↓ and Enter. Esc cancels.${ANSI.reset}`);
+      open = true;
+    };
+
+    const finish = (value: ReasoningEffort | undefined): void => {
+      clearMenu();
+      output.write("\r\n");
+      cleanup();
+      resolve(value);
+    };
+
+    const onData = (chunk: string) => {
+      for (const ch of chunk) {
+        if (escState === "esc") {
+          if (ch === "[") {
+            escState = "csi";
+            continue;
+          }
+
+          escState = "none";
+          finish(undefined);
+          return;
+        }
+
+        if (escState === "csi") {
+          escState = "none";
+          if (ch === "A") {
+            selectedIndex = (selectedIndex + choices.length - 1) % choices.length;
+            drawMenu();
+          } else if (ch === "B") {
+            selectedIndex = (selectedIndex + 1) % choices.length;
+            drawMenu();
+          }
+          continue;
+        }
+
+        if (ch === ESC) {
+          escState = "esc";
+          continue;
+        }
+
+        if (ch === "\r" || ch === "\n") {
+          finish(choices[selectedIndex]);
+          return;
+        }
+
+        if (ch === "\u0003") {
+          if (input.isTTY) input.setRawMode(false);
+          process.exit(130);
+        }
+
+        if (ch === "\u0004") {
+          finish(undefined);
+          return;
+        }
+      }
+    };
+
+    drawMenu();
+    input.on("data", onData);
+  });
+}
+
+async function executeSlashCommand(
   session: InteractiveOptions,
   parsed: { command: string; args: string[] },
-): boolean {
+): Promise<boolean> {
   switch (parsed.command) {
     case "/model":
       if (parsed.args.length === 1) {
         session.model = parsed.args[0];
+        console.log(`  ${ANSI.slate}model${ANSI.reset}  ${session.model}`);
       } else {
         console.log(`  ${ANSI.slate}model${ANSI.reset}  ${session.model}`);
       }
@@ -348,9 +461,19 @@ function executeSlashCommand(
     case "/reasoning":
       if (parsed.args.length === 1) {
         const v = parsed.args[0];
-        if (v === "low" || v === "medium" || v === "high") session.reasoningEffort = v;
+        if (v === "low" || v === "medium" || v === "high") {
+          session.reasoningEffort = v;
+          console.log(`  ${ANSI.slate}reasoning${ANSI.reset}  ${session.reasoningEffort}`);
+        } else {
+          console.log(`  ${ANSI.slate}reasoning${ANSI.reset}  ${session.reasoningEffort}`);
+          console.log(`  ${ANSI.dim}use /reasoning high | medium | low${ANSI.reset}`);
+        }
       } else {
-        console.log(`  ${ANSI.slate}reasoning${ANSI.reset}  ${session.reasoningEffort}`);
+        const selected = await promptForReasoningLevel(session.reasoningEffort);
+        if (selected) {
+          session.reasoningEffort = selected;
+          console.log(`  ${ANSI.slate}reasoning${ANSI.reset}  ${session.reasoningEffort}`);
+        }
       }
       return true;
     case "/approval":
@@ -423,7 +546,7 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
 
       if (trimmed.startsWith("/")) {
         const parsed = parseSlashCommand(trimmed);
-        executeSlashCommand(session, parsed);
+        await executeSlashCommand(session, parsed);
         continue;
       }
 

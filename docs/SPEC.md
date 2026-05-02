@@ -108,7 +108,7 @@ Config shape:
 ```json
 {
   "model": "solar-pro3-260323",
-  "reasoningEffort": "medium",
+  "reasoningEffort": "high",
   "approvalPolicy": "on-failure",
   "sandbox": "workspace-write",
   "quiet": false

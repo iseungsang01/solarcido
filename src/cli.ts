@@ -56,12 +56,11 @@ export function printHelp(): void {
   console.log(`
 solarcido
 
-Legacy TypeScript CLI.
-The Rust CLI under crates/solarcido-cli is the supported default entrypoint.
+TypeScript CLI for the current repository.
 
 Usage:
   solarcido
-  solarcido run "your goal" [--cwd .] [--reasoning low|medium|high] [--model name] [--approval-policy on-failure] [--sandbox workspace-write] [--quiet]
+  solarcido run "your goal" [--cwd .] [--reasoning low|medium|high] [--model name] [--approval-policy on-failure|on-request|never] [--sandbox read-only|workspace-write] [--quiet]
   solarcido config get [key]
   solarcido config set <key> <value>
   solarcido config path
@@ -84,8 +83,13 @@ Interactive shell:
   /reasoning <level>     set reasoning level
   /approval <policy>     set approval policy
   /sandbox <mode>        set sandbox mode
+  /cwd                   show working directory
+  /status                show current session settings
+  /clear                 clear the terminal
   /quiet                 suppress assistant chat messages
   /verbose               show assistant chat messages
+  /exit                  quit
+  /quit                  quit
   `);
 }
 

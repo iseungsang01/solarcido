@@ -4,12 +4,6 @@
 
 ## Quick start
 
-MacOS/Linux (Recommended, requires Rust/Cargo):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/iseungsang01/solarcido/main/install.sh | bash
-```
-
 Set your Upstage API key:
 
 ```bash
@@ -26,7 +20,7 @@ Development install:
 
 ```bash
 npm install
-npm run build:rust
+npm run build
 npm start
 ```
 
@@ -43,15 +37,7 @@ solarcido> update README to match the current behavior
 You can also run a single task directly:
 
 ```bash
-solarcido run "refactor the command parser" --cwd . --reasoning-effort medium
-```
-
-Rust sessions are saved as JSONL under `<repo>/.solarcido/sessions/`:
-
-```bash
-solarcido --resume latest prompt "continue"
-solarcido status
-solarcido init
+solarcido run "refactor the command parser" --cwd . --reasoning high
 ```
 
 Persistent defaults live in `~/.solarcido/config.json`, or under
@@ -62,49 +48,34 @@ solarcido config get
 solarcido config set sandbox workspace-write
 solarcido config path
 solarcido sessions list
-solarcido sessions show latest
-solarcido memory
-```
-
-The same config file can also hold MCP server settings under an `mcp` block;
-`solarcido mcp` reports the configured servers.
-
-The TypeScript sources remain in the repo for compatibility checks, but the
-supported CLI entrypoints now launch the Rust binary:
-
-```bash
-npm run build
-node dist/index.js --help
+solarcido sessions show <id>
 ```
 
 ## Options
 
-- `--cwd`: working directory
-- `--reasoning-effort`: `low | medium | high`
+- `--cwd`: working directory, default `process.cwd()`
+- `--reasoning`: `low | medium | high`
 - `--model`: model to use for the coding assistant
-- `--max-output-tokens`: maximum response tokens to request from Solar Pro, default `4096`
-- `--permission-mode`: `read-only | workspace-write | danger-full-access`
-- `--output-format`: `text | json`
-- `--resume`: `latest`, a session id, or a `.jsonl` session path
+- `--approval-policy`: `never | on-failure | on-request`
+- `--sandbox`: `read-only | workspace-write`
+- `--quiet`: suppress assistant chat messages
 
-## Config and memory
+## Config
 
-Rust Solarcido loads persistent defaults from `~/.solarcido/config.json`:
+Solarcido loads persistent defaults from `~/.solarcido/config.json`:
 
 ```json
 {
   "model": "solar-pro3-260323",
-  "reasoningEffort": "medium",
+  "reasoningEffort": "high",
   "approvalPolicy": "on-failure",
   "sandbox": "workspace-write",
   "quiet": false
 }
 ```
 
-CLI flags override config values. `SOLARCIDO_MODEL` and
-`SOLARCIDO_MAX_OUTPUT_TOKENS` remain supported for environment overrides.
-Optional global memory is read from `~/.solarcido/memory.md` and appended to the
-active system prompt when present.
+CLI flags override config values. `SOLARCIDO_HOME` can relocate the config and
+session directories.
 
 ## Development
 
@@ -116,8 +87,8 @@ npm run build
 
 ## Rust port
 
-The Rust CLI under `crates/` is now the default `solarcido` entrypoint. During
-development, you can still run it with Cargo:
+The Rust CLI under `crates/` remains available for comparison and parity work.
+During development, you can still run it with Cargo:
 
 ```bash
 cargo run -p solarcido-cli -- --help
@@ -125,14 +96,9 @@ cargo run -p solarcido-cli -- prompt "summarize this repository" --cwd .
 cargo run -p solarcido-cli -- --resume latest prompt "continue"
 ```
 
-The npm bin wrapper targets the Rust CLI by default, preferring an existing
-`target/release/solarcido` or `target/debug/solarcido` binary and falling back
-to `cargo run -p solarcido-cli --` when no compiled binary is present.
-
 ## Notes
 
 - The default model is `solar-pro3-260323`.
-- Solar Pro's model context window is fixed by the provider. Solarcido defaults to a 4K output budget so more of that window is available for prompts, session history, and tool results. Set `--max-output-tokens` or `SOLARCIDO_MAX_OUTPUT_TOKENS` when you need a different output budget.
 - The assistant uses repository tools for file listing, code search, line-window reads, focused string edits, whole-file writes, command execution, and task completion.
 - For change requests, the workflow rejects a premature `finish` until a file edit or write has succeeded, so the assistant cannot stop at expected actions only.
 - Command failures are returned to the assistant as structured output instead of crashing the workflow.

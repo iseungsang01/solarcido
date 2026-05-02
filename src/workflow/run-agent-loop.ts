@@ -35,14 +35,13 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   const client = createSolarClient();
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const reasoningEffort = options.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
-  const model = options.model;
+  const selectedModel = options.model ?? DEFAULT_MODEL;
   const approvalPolicy = options.approvalPolicy ?? "on-failure";
   const sandbox = options.sandbox ?? "workspace-write";
-  const selectedModel = model ?? DEFAULT_MODEL;
   const session = await createSession({
     goal: options.goal,
     cwd,
-    model,
+    model: selectedModel,
     reasoningEffort,
     approvalPolicy,
     sandbox,
@@ -90,7 +89,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
       const response = await waitForSolarResponse(
         () =>
           runSolarChat(client, {
-            model,
+            model: selectedModel,
             messages,
             tools,
             toolChoice: "auto",
