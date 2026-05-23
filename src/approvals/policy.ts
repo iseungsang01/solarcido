@@ -1,4 +1,4 @@
-import type { ApprovalPolicy } from "../config/schema.js";
+import type { ApprovalPolicy } from "../runtime/config.js";
 
 export type CommandRisk = "low" | "risky";
 
@@ -33,3 +33,4 @@ export function decideApproval(policy: ApprovalPolicy, risk: CommandRisk, approv
     reason: "Command requires approval.",
   };
 }
+

@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { editFile, readFile, searchFiles } from "../dist/tools/filesystem.js";
-import { formatCommandOutput, runCommand } from "../dist/tools/process.js";
+import { editFile, readFile, searchFiles } from "../dist/runtime/file-ops.js";
+import { formatCommandOutput, runCommand } from "../dist/runtime/bash.js";
 
 async function withTempWorkspace(run) {
   const parent = await mkdtemp(path.join(tmpdir(), "solarcido-test-"));
@@ -90,3 +90,4 @@ test("runCommand returns structured output from command execution", async () => 
     }
   });
 });
+

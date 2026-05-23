@@ -1,7 +1,7 @@
 import { stdin as input, stdout as output } from "node:process";
 
-import type { ApprovalPolicy, SandboxMode } from "./config/schema.js";
-import { DEFAULT_MODEL, type ReasoningEffort } from "./solar/constants.js";
+import type { ApprovalPolicy, SandboxMode } from "./runtime/config.js";
+import { DEFAULT_MODEL, type ReasoningEffort } from "./api/client.js";
 import { runWorkflow } from "./workflow/run-agent-loop.js";
 
 export type InteractiveOptions = {
@@ -566,3 +566,4 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
     input.pause();
   }
 }
+

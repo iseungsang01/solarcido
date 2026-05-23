@@ -2,6 +2,10 @@
 
 This roadmap turns `docs/SPEC.md` into implementation phases. Build in this order unless there is a strong reason to change the sequence.
 
+## Architecture Restructure Note
+
+Solarcido is being prepared for a TypeScript runtime restructure toward the local `claw-rust` reference architecture. The first restructuring pass creates API, runtime, tools, commands, plugins, telemetry, and CLI module boundaries without changing runtime behavior.
+
 ## Phase 0: Current Baseline
 
 Status: done.

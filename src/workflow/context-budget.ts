@@ -1,5 +1,3 @@
-import type OpenAI from "openai";
-
 /**
  * Token estimation utilities for multi-agent orchestration.
  * This is a deterministic approximation until provider token counts are available.
@@ -55,25 +53,42 @@ export function getCompactTranscript(
   return compactTranscript(transcript, maxTokens);
 }
 
-export function formatAgentResultSummary(agentResult: any): string {
+type SummarizableAgentResult = {
+  role: string;
+  summary?: string;
+  findings?: string[];
+  changedFiles?: string[];
+  evidence?: string[];
+  risks?: string[];
+  nextSteps?: string[];
+};
+
+type SummarizableOrchestrationResult = {
+  summary?: string;
+  changedFiles?: string[];
+  nextSteps?: string[];
+  agentResults?: SummarizableAgentResult[];
+};
+
+export function formatAgentResultSummary(agentResult: SummarizableAgentResult): string {
   // Helper to produce a concise summary from agentResult fields.
   const parts: string[] = [];
   if (agentResult.summary) parts.push(agentResult.summary);
-  if (agentResult.findings.length) parts.push(`Findings: ${agentResult.findings.join(", ")}.`);
-  if (agentResult.evidence.length) parts.push(`Evidence: ${agentResult.evidence.join(", ")}.`);
-  if (agentResult.risks.length) parts.push(`Risks: ${agentResult.risks.join(", ")}.`);
-  if (agentResult.nextSteps.length) parts.push(`Next steps: ${agentResult.nextSteps.join(", ")}.`);
-  if (agentResult.changedFiles.length) parts.push(`Changed files: ${agentResult.changedFiles.join(", ")}.`);
+  if (agentResult.findings?.length) parts.push(`Findings: ${agentResult.findings.join(", ")}.`);
+  if (agentResult.evidence?.length) parts.push(`Evidence: ${agentResult.evidence.join(", ")}.`);
+  if (agentResult.risks?.length) parts.push(`Risks: ${agentResult.risks.join(", ")}.`);
+  if (agentResult.nextSteps?.length) parts.push(`Next steps: ${agentResult.nextSteps.join(", ")}.`);
+  if (agentResult.changedFiles?.length) parts.push(`Changed files: ${agentResult.changedFiles.join(", ")}.`);
   return parts.join(" ");
 }
 
-export function formatOrchestrationResultSummary(orchestrationResult: any): string {
+export function formatOrchestrationResultSummary(orchestrationResult: SummarizableOrchestrationResult): string {
   const parts: string[] = [];
   if (orchestrationResult.summary) parts.push(orchestrationResult.summary);
-  if (orchestrationResult.changedFiles.length) parts.push(`Changed files: ${orchestrationResult.changedFiles.join(", ")}.`);
-  if (orchestrationResult.nextSteps.length) parts.push(`Next steps: ${orchestrationResult.nextSteps.join(", ")}.`);
-  if (orchestrationResult.agentResults.length) {
-    const agentSummaries = orchestrationResult.agentResults.map((r) => r.role + ": " + formatAgentResultSummary(r));
+  if (orchestrationResult.changedFiles?.length) parts.push(`Changed files: ${orchestrationResult.changedFiles.join(", ")}.`);
+  if (orchestrationResult.nextSteps?.length) parts.push(`Next steps: ${orchestrationResult.nextSteps.join(", ")}.`);
+  if (orchestrationResult.agentResults?.length) {
+    const agentSummaries = orchestrationResult.agentResults.map((result) => `${result.role}: ${formatAgentResultSummary(result)}`);
     parts.push(`Agent results: ${agentSummaries.join(", ")}.`);
   }
   return parts.join(" ");

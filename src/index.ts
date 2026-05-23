@@ -1,6 +1,6 @@
-import { getConfigPath, getConfigValue, loadConfig, parseConfigKey, parseConfigValue, saveConfig } from "./config/load-config.js";
+import { getConfigPath, getConfigValue, loadConfig, parseConfigKey, parseConfigValue, saveConfig } from "./runtime/config.js";
 import { printHelp, parseCliArgs, type CliCommand } from "./cli.js";
-import { listSessions, readSession } from "./sessions/session-store.js";
+import { listSessions, readSession } from "./runtime/session.js";
 import { startInteractiveShell } from "./interactive.js";
 import { runWorkflow } from "./workflow/run-agent-loop.js";
 
@@ -87,3 +87,4 @@ main().catch((error: unknown) => {
   console.error(`solarcido: ${message}`);
   process.exitCode = 1;
 });
+
