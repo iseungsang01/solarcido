@@ -11,7 +11,7 @@ import {
   failSession,
   listSessions,
   readSession,
-} from "../dist/sessions/session-store.js";
+} from "../dist/runtime/session.js";
 
 async function withSessionHome(run) {
   const previousHome = process.env.SOLARCIDO_HOME;
@@ -92,3 +92,4 @@ test("listSessions returns newest sessions first", async () => {
     );
   });
 });
+

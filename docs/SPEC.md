@@ -33,8 +33,8 @@ Core modules:
 - `src/tools/registry.ts`: tool schema definitions, argument validation, and dispatch.
 - `src/tools/filesystem.ts`: workspace-scoped file operations.
 - `src/tools/process.ts`: workspace-scoped command execution.
-- `src/solar/client.ts`: OpenAI-compatible Upstage client.
-- `src/solar/constants.ts`: default model and reasoning settings.
+- `src/api/client.ts`: provider-neutral API client entrypoint.
+- `src/api/providers/upstage.ts`: OpenAI-compatible Upstage client and provider defaults.
 
 Boundary rules:
 
@@ -123,7 +123,7 @@ Precedence, highest first:
 1. CLI flags.
 2. Interactive session overrides.
 3. `~/.solarcido/config.json`.
-4. Built-in defaults from `src/solar/constants.ts`.
+4. Built-in defaults from `src/api/client.ts`.
 
 Config rules:
 

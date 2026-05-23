@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT } from "../dist/solar/constants.js";
+import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT } from "../dist/api/client.js";
 import { parseCliArgs } from "../dist/cli.js";
 
 test("parseCliArgs returns interactive defaults without arguments", () => {

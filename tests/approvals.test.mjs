@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { classifyCommand } from "../dist/approvals/classify-command.js";
 import { decideApproval } from "../dist/approvals/policy.js";
-import { executeToolCall } from "../dist/tools/registry.js";
+import { verifyExecution } from "../dist/agents/verifier.js";
+import { createToolDefinitions, executeToolCall } from "../dist/tools/registry.js";
 
 function toolCall(name, args) {
   return {
@@ -63,6 +64,107 @@ test("executeToolCall blocks writes in read-only sandbox", async () => {
       toolName: "write_file",
       content: "ERROR: write_file is disabled in read-only sandbox mode.",
     });
+  });
+});
+
+test("createToolDefinitions filters tools by maximum permission", () => {
+  const readOnlyNames = createToolDefinitions({ maxPermission: "read-only" }).map((tool) => tool.function.name);
+  const workspaceNames = createToolDefinitions({ maxPermission: "workspace-write" }).map((tool) => tool.function.name);
+
+  assert.deepEqual(readOnlyNames, ["list_files", "read_file", "search_files", "finish"]);
+  assert.equal(workspaceNames.includes("write_file"), true);
+  assert.equal(workspaceNames.includes("edit_file"), true);
+  assert.equal(workspaceNames.includes("run_command"), true);
+});
+
+test("executeToolCall enforces permission metadata for hidden tools", async () => {
+  await withTempWorkspace(async (root) => {
+    const result = await executeToolCall(root, toolCall("edit_file", {
+      path: "a.txt",
+      old_string: "old",
+      new_string: "new",
+    }), {
+      approvalPolicy: "never",
+      sandbox: "workspace-write",
+      maxPermission: "read-only",
+    });
+
+    assert.deepEqual(result, {
+      toolName: "edit_file",
+      content: "ERROR: edit_file is disabled in read-only sandbox mode.",
+    });
+  });
+});
+
+test("verifier exposes and enforces read-only tools only", async () => {
+  await withTempWorkspace(async (root) => {
+    await writeFile(path.join(root, "a.txt"), "old", "utf8");
+    const toolNamesByCall = [];
+    const toolResults = [];
+    const fakeClient = {
+      async chat(options) {
+        toolNamesByCall.push((options.tools ?? []).map((tool) => tool.function.name));
+
+        const lastToolMessage = options.messages.findLast?.((message) => message.role === "tool");
+        if (lastToolMessage) {
+          toolResults.push(lastToolMessage.content);
+        }
+
+        if (toolResults.length === 0) {
+          return {
+            choices: [{
+              message: {
+                role: "assistant",
+                content: "",
+                tool_calls: [toolCall("edit_file", {
+                  path: "a.txt",
+                  old_string: "old",
+                  new_string: "new",
+                })],
+              },
+            }],
+          };
+        }
+
+        return {
+          choices: [{
+            message: {
+              role: "assistant",
+              content: "",
+              tool_calls: [toolCall("finish", {
+                summary: "verified",
+                changed_files: [],
+                next_steps: [],
+              })],
+            },
+          }],
+        };
+      },
+    };
+
+    const result = await verifyExecution(
+      fakeClient,
+      "verify permissions",
+      {
+        summary: "permission plan",
+        explorationTargets: [],
+        executionSteps: [],
+        verificationCommands: [],
+      },
+      {
+        finish: {
+          summary: "done",
+          changed_files: [],
+          next_steps: [],
+        },
+        transcript: [],
+      },
+      root,
+    );
+
+    assert.deepEqual(toolNamesByCall[0], ["list_files", "read_file", "search_files", "finish"]);
+    assert.equal(toolResults[0], "ERROR: edit_file is disabled in read-only sandbox mode.");
+    assert.equal(result.summary, "verified");
   });
 });
 

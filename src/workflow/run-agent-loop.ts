@@ -1,15 +1,19 @@
 import path from "node:path";
-import type OpenAI from "openai";
-
 import {
   blockedPrematureFinishMessage,
   goalLikelyRequiresModification,
   isSuccessfulModificationTool,
 } from "../agents/execution-guard.js";
-import type { ApprovalPolicy, SandboxMode } from "../config/schema.js";
-import { completeSession, createSession, failSession } from "../sessions/session-store.js";
-import { createSolarClient, runSolarChat } from "../solar/client.js";
-import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
+import type { ApprovalPolicy, SandboxMode } from "../runtime/config.js";
+import { completeSession, createSession, failSession } from "../runtime/session.js";
+import {
+  DEFAULT_MODEL,
+  DEFAULT_REASONING_EFFORT,
+  createApiClient,
+  runApiChat,
+  type ChatMessage,
+  type ReasoningEffort,
+} from "../api/client.js";
 import { createToolDefinitions, executeToolCall, type FinishPayload } from "../tools/registry.js";
 import { orchestrateGoal } from "./orchestrator.js";
 
@@ -21,8 +25,8 @@ export type RunWorkflowOptions = {
   cwd?: string;
   reasoningEffort?: ReasoningEffort;
   model?: string;
-  approvalPolicy?: string;
-  sandbox?: string;
+  approvalPolicy?: ApprovalPolicy;
+  sandbox?: SandboxMode;
   /**
    * When true, suppress assistant messages (only tool output).
    */
@@ -33,7 +37,7 @@ export type RunWorkflowOptions = {
  * Run the workflow.
  */
 export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
-  const client = createSolarClient();
+  const client = createApiClient();
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const reasoningEffort = options.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
   const selectedModel = options.model ?? DEFAULT_MODEL;
@@ -47,11 +51,11 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     approvalPolicy,
     sandbox,
   });
-  const tools = createToolDefinitions();
+  const tools = createToolDefinitions({ maxPermission: sandbox });
   const transcript: string[] = [];
   const requiresModification = goalLikelyRequiresModification(options.goal);
   let successfulModification = false;
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+  const messages: ChatMessage[] = [
     {
       role: "system",
       content: [
@@ -178,3 +182,4 @@ function printFinish(finish: FinishPayload): void {
     }
   }
 }
+

@@ -1,7 +1,7 @@
 import path from "node:path";
 
-import type { ApprovalPolicy, SandboxMode } from "./config/schema.js";
-import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "./solar/constants.js";
+import type { ApprovalPolicy, SandboxMode } from "./runtime/config.js";
+import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "./api/client.js";
 
 export type CliDefaults = {
   reasoningEffort: ReasoningEffort;
@@ -254,3 +254,4 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
     quiet,
   };
 }
+

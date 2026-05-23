@@ -1,0 +1,2 @@
+{"timestamp":"2026-05-23T11:22:54.238Z","type":"native_hook_stdin_parse_error","hook_event_name":"Unknown","error":"Unterminated string in JSON at position 523 (line 1 column 524)"}
+{"timestamp":"2026-05-23T13:19:32.624Z","type":"native_hook_stdin_parse_error","hook_event_name":"Unknown","error":"Expected double-quoted property name in JSON at position 1598 (line 1 column 1599)"}

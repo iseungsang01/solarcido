@@ -11,8 +11,8 @@ import {
   parseConfigValue,
   saveConfig,
   setConfigValue,
-} from "../dist/config/load-config.js";
-import { DEFAULT_CONFIG } from "../dist/config/schema.js";
+} from "../dist/runtime/config.js";
+import { DEFAULT_CONFIG } from "../dist/runtime/config.js";
 
 async function withConfigHome(run) {
   const previousHome = process.env.SOLARCIDO_HOME;
@@ -78,3 +78,4 @@ test("setConfigValue updates a single key", () => {
 test("parseConfigKey rejects unknown keys", () => {
   assert.throws(() => parseConfigKey("missing"), /Unknown config key/);
 });
+

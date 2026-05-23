@@ -1,31 +1,31 @@
-import path from "node:path";
-import type OpenAI from "openai";
-
-import { createToolDefinitions, executeToolCall, type FinishPayload } from "../tools/registry.js";
-import { createSolarClient, runSolarChat } from "../solar/client.js";
-import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
-import { blockedPrematureFinishMessage, goalLikelyRequiresModification, isSuccessfulModificationTool } from "../agents/execution-guard.js";
-import type { AgentResult } from "../agents/types.js";
+import type { ApprovalPolicy, SandboxMode } from "../runtime/config.js";
+import type { PermissionMode } from "../runtime/permissions.js";
+import { createToolDefinitions, executeToolCall } from "../tools/registry.js";
+import { runApiChat, type ApiClient, type ChatMessage } from "../api/client.js";
+import { DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../api/client.js";
+import { blockedPrematureFinishMessage, goalLikelyRequiresModification } from "../agents/execution-guard.js";
+import type { AgentResult, AgentRole, WorkflowPlan } from "../agents/types.js";
 
 /**
  * Generic agent loop for a single role.
  * Used by planner, explorer, executor, verifier, reviewer.
  */
 export async function runAgentLoop(
-  client: OpenAI,
-  role: string,
+  client: ApiClient,
+  role: AgentRole,
   goal: string,
-  plan?: any,
+  plan: WorkflowPlan | undefined,
   cwd: string,
   reasoningEffort: ReasoningEffort = DEFAULT_REASONING_EFFORT,
   model?: string,
-  approvalPolicy?: string,
-  sandbox?: string,
+  approvalPolicy: ApprovalPolicy = "on-failure",
+  sandbox: SandboxMode = "workspace-write",
   quiet?: boolean,
 ): Promise<AgentResult> {
-  const tools = createToolDefinitions();
+  const maxPermission = toolPermissionForAgentRole(role, sandbox);
+  const tools = createToolDefinitions({ maxPermission });
   const transcript: string[] = [];
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+  const messages: ChatMessage[] = [
     {
       role: "system",
       content: [
@@ -42,9 +42,9 @@ export async function runAgentLoop(
         `Goal: ${goal}`,
         `Working directory: ${cwd}`,
         ...(plan ? [`Plan summary: ${plan.summary}`] : []),
-        ...(plan && plan.explorationTargets ? [`Exploration targets: ${plan.explorationTargets.join(", ") || "<none>"}] : []),
-        ...(plan && plan.executionSteps ? [`Execution steps: ${plan.executionSteps.join(", ") || "<none>"}] : []),
-        ...(plan && plan.verificationCommands ? [`Verification commands: ${plan.verificationCommands.join(", ") || "<none>"}] : []),
+        ...(plan && plan.explorationTargets ? [`Exploration targets: ${plan.explorationTargets.join(", ") || "<none>"}`] : []),
+        ...(plan && plan.executionSteps ? [`Execution steps: ${plan.executionSteps.join(", ") || "<none>"}`] : []),
+        ...(plan && plan.verificationCommands ? [`Verification commands: ${plan.verificationCommands.join(", ") || "<none>"}`] : []),
       ].join("\n"),
     },
   ];
@@ -57,7 +57,7 @@ export async function runAgentLoop(
 
   try {
     while (true) {
-      const response = await runSolarChat(client, {
+      const response = await runApiChat(client, {
         model,
         messages,
         tools,
@@ -84,7 +84,7 @@ export async function runAgentLoop(
         continue;
       }
       for (const toolCall of message.tool_calls) {
-        const result = await executeToolCall(cwd, toolCall, { approvalPolicy, sandbox });
+        const result = await executeToolCall(cwd, toolCall, { approvalPolicy, sandbox, maxPermission });
         const finishBlocked = result.finish && goalLikelyRequiresModification(goal) && sandbox !== "read-only" && !result.finish.changed_files?.length;
         const toolContent = finishBlocked ? blockedPrematureFinishMessage() : result.content;
         const finish = finishBlocked ? undefined : result.finish;
@@ -115,5 +115,17 @@ export async function runAgentLoop(
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[error] ${message}`);
     throw error;
+  }
+}
+
+export function toolPermissionForAgentRole(role: AgentRole, sandbox: SandboxMode): PermissionMode {
+  switch (role) {
+    case "explorer":
+    case "planner":
+    case "reviewer":
+    case "verifier":
+      return "read-only";
+    case "executor":
+      return sandbox;
   }
 }

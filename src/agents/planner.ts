@@ -1,7 +1,4 @@
-import type OpenAI from "openai";
-
-import { DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
-import { runSolarChat } from "../solar/client.js";
+import { DEFAULT_REASONING_EFFORT, runApiChat, type ApiClient, type ReasoningEffort } from "../api/client.js";
 import type { WorkflowPlan } from "../workflow/types.js";
 
 /**
@@ -9,12 +6,12 @@ import type { WorkflowPlan } from "../workflow/types.js";
  * Produces a structured plan from the user goal.
  */
 export async function createPlan(
-  client: OpenAI,
+  client: ApiClient,
   goal: string,
   reasoningEffort: ReasoningEffort = DEFAULT_REASONING_EFFORT,
   model?: string,
 ): Promise<WorkflowPlan> {
-  const response = await runSolarChat(client, {
+  const response = await runApiChat(client, {
     model,
     reasoningEffort,
     temperature: 0.2,

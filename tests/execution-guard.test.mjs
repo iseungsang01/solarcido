@@ -6,6 +6,7 @@ import {
   goalLikelyRequiresModification,
   isSuccessfulModificationTool,
 } from "../dist/agents/execution-guard.js";
+import { toolPermissionForAgentRole } from "../dist/workflow/agent-loop.js";
 
 test("goalLikelyRequiresModification detects English change requests", () => {
   assert.equal(goalLikelyRequiresModification("fix the parser bug"), true);
@@ -27,5 +28,13 @@ test("isSuccessfulModificationTool only accepts successful write tools", () => {
 
 test("blockedPrematureFinishMessage returns a recoverable tool error", () => {
   assert.match(blockedPrematureFinishMessage(), /^ERROR:/);
+});
+
+test("generic agent loop maps read-only roles to read-only tool permission", () => {
+  assert.equal(toolPermissionForAgentRole("planner", "workspace-write"), "read-only");
+  assert.equal(toolPermissionForAgentRole("explorer", "workspace-write"), "read-only");
+  assert.equal(toolPermissionForAgentRole("verifier", "workspace-write"), "read-only");
+  assert.equal(toolPermissionForAgentRole("reviewer", "workspace-write"), "read-only");
+  assert.equal(toolPermissionForAgentRole("executor", "workspace-write"), "workspace-write");
 });
 

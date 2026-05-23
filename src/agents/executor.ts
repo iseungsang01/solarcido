@@ -1,26 +1,31 @@
-import type OpenAI from "openai";
-
-import { DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
-import { runSolarChat } from "../solar/client.js";
-import type { WorkflowPlan } from "./planner.js";
+import { DEFAULT_REASONING_EFFORT, runApiChat, type ApiClient, type ChatMessage, type ReasoningEffort } from "../api/client.js";
+import type { ApprovalPolicy, SandboxMode } from "../runtime/config.js";
+import type { WorkflowPlan } from "../workflow/types.js";
 import { createToolDefinitions, executeToolCall, type FinishPayload } from "../tools/registry.js";
 import { estimateTranscriptTokens, compactTranscript } from "../workflow/context-budget.js";
+
+export type ExecutionResult = {
+  finish: FinishPayload;
+  transcript: string[];
+};
 
 /**
  * Executor Agent.
  * Makes edits and may run focused commands.
  */
 export async function executePlan(
-  client: OpenAI,
+  client: ApiClient,
   goal: string,
   plan: WorkflowPlan,
   cwd: string,
   reasoningEffort: ReasoningEffort = DEFAULT_REASONING_EFFORT,
   model?: string,
+  approvalPolicy: ApprovalPolicy = "on-failure",
+  sandbox: SandboxMode = "workspace-write",
 ): Promise<ExecutionResult> {
-  const tools = createToolDefinitions();
+  const tools = createToolDefinitions({ maxPermission: sandbox });
   const transcript: string[] = [];
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+  const messages: ChatMessage[] = [
     {
       role: "system",
       content: [
@@ -54,7 +59,7 @@ export async function executePlan(
       transcript.push(...compacted);
     }
 
-    const response = await runSolarChat(client, {
+    const response = await runApiChat(client, {
       model,
       messages,
       tools,
@@ -78,7 +83,7 @@ export async function executePlan(
       continue;
     }
     for (const toolCall of message.tool_calls) {
-      const result = await executeToolCall(cwd, toolCall);
+      const result = await executeToolCall(cwd, toolCall, { approvalPolicy, sandbox });
       transcript.push(`tool:${result.toolName}: ${result.content}`);
       messages.push({
         role: "tool",

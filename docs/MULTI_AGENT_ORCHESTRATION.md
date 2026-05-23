@@ -62,7 +62,7 @@ Ownership:
 
 Boundary rules:
 
-- Agent modules may call model APIs through `src/solar/client.ts`.
+- Agent modules may call model APIs through the provider-neutral `src/api/client.ts` boundary.
 - Agent modules may call tools only through `src/tools/registry.ts`.
 - Tool implementation remains in `src/tools/`.
 - The orchestrator must not perform file or process side effects directly.

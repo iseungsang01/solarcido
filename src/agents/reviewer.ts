@@ -1,18 +1,21 @@
-import type OpenAI from "openai";
-
-import { DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../solar/constants.js";
-import { runSolarChat } from "../solar/client.js";
+import { DEFAULT_REASONING_EFFORT, runApiChat, type ApiClient, type ChatMessage, type ReasoningEffort } from "../api/client.js";
 import type { AgentResult } from "./types.js";
 import type { WorkflowPlan } from "../workflow/types.js";
 import type { ExecutionResult } from "./executor.js";
 import type { VerificationResult } from "./verifier.js";
+
+export type ReviewResult = {
+  role: "reviewer";
+  summary: string;
+  concerns: string[];
+};
 
 /**
  * Reviewer Agent.
  * Checks whether the result satisfies the original goal.
  */
 export async function reviewExecution(
-  client: OpenAI,
+  client: ApiClient,
   goal: string,
   plan: WorkflowPlan,
   explorerResult: AgentResult,
@@ -23,9 +26,9 @@ export async function reviewExecution(
   model?: string,
 ): Promise<ReviewResult> {
   const tools = await import("../tools/registry.js");
-  const toolDefinitions = tools.createToolDefinitions();
+  const toolDefinitions = tools.createToolDefinitions({ maxPermission: "read-only" });
   const transcript: string[] = [];
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+  const messages: ChatMessage[] = [
     {
       role: "system",
       content: [
@@ -41,7 +44,7 @@ export async function reviewExecution(
       content: [
         `Goal: ${goal}`,
         `Plan summary: ${plan.summary}`,
-        `Plan steps: ${plan.executionSteps.map((s) => `${s.title} - ${s.goal}`).join(", ") || "<none>"}`,
+        `Plan steps: ${plan.executionSteps.join(", ") || "<none>"}`,
         `Exploration targets: ${plan.explorationTargets.join(", ") || "<none>"}`,
         `Verification commands: ${plan.verificationCommands.join(", ") || "<none>"}`,
         `Execution summary: ${executorResult.finish?.summary ?? "<none>"}`,
@@ -60,10 +63,10 @@ export async function reviewExecution(
   ];
 
   while (true) {
-    const response = await runSolarChat(client, {
+    const response = await runApiChat(client, {
       model,
       messages,
-      toolDefinitions,
+      tools: toolDefinitions,
       toolChoice: "auto",
       reasoningEffort,
       temperature: 0.1,
@@ -84,7 +87,10 @@ export async function reviewExecution(
       continue;
     }
     for (const toolCall of message.tool_calls) {
-      const result = await tools.executeToolCall(cwd, toolCall);
+      const result = await tools.executeToolCall(cwd, toolCall, {
+        approvalPolicy: "never",
+        sandbox: "read-only",
+      });
       transcript.push(`tool:${result.toolName}: ${result.content}`);
       messages.push({
         role: "tool",
