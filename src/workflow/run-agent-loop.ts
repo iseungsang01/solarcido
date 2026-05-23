@@ -1,21 +1,12 @@
 import path from "node:path";
-import {
-  blockedPrematureFinishMessage,
-  goalLikelyRequiresModification,
-  isSuccessfulModificationTool,
-} from "../agents/execution-guard.js";
+
+import { createApiClient, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../api/client.js";
+import { promptForCommandApproval } from "../approvals/prompt.js";
 import type { ApprovalPolicy, SandboxMode } from "../runtime/config.js";
-import { completeSession, createSession, failSession } from "../runtime/session.js";
-import {
-  DEFAULT_MODEL,
-  DEFAULT_REASONING_EFFORT,
-  createApiClient,
-  runApiChat,
-  type ChatMessage,
-  type ReasoningEffort,
-} from "../api/client.js";
-import { createToolDefinitions, executeToolCall, type FinishPayload } from "../tools/registry.js";
-import { orchestrateGoal } from "./orchestrator.js";
+import { ConversationRuntime, createDefaultSessionStore } from "../runtime/conversation.js";
+import { PermissionEnforcer } from "../runtime/permission-enforcer.js";
+import { SystemPromptBuilder } from "../runtime/prompt.js";
+import { GlobalToolRegistry, type FinishPayload } from "../tools/registry.js";
 
 /**
  * Run workflow options.
@@ -28,7 +19,7 @@ export type RunWorkflowOptions = {
   approvalPolicy?: ApprovalPolicy;
   sandbox?: SandboxMode;
   /**
-   * When true, suppress assistant messages (only tool output).
+   * When true, suppress assistant status messages.
    */
   quiet?: boolean;
 };
@@ -43,128 +34,36 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   const selectedModel = options.model ?? DEFAULT_MODEL;
   const approvalPolicy = options.approvalPolicy ?? "on-failure";
   const sandbox = options.sandbox ?? "workspace-write";
-  const session = await createSession({
+
+  if (!options.quiet) {
+    console.log(`\n[assistant] Working in ${cwd}`);
+  }
+
+  const runtime = new ConversationRuntime({
+    apiClient: client,
+    toolRegistry: new GlobalToolRegistry(),
+    sessionStore: createDefaultSessionStore(),
+    permissionEnforcer: new PermissionEnforcer({
+      approvalPolicy,
+      sandbox,
+      approveCommand: promptForCommandApproval,
+    }),
+    promptBuilder: new SystemPromptBuilder(),
+  });
+
+  const summary = await runtime.runTurn({
     goal: options.goal,
     cwd,
-    model: selectedModel,
     reasoningEffort,
+    model: selectedModel,
     approvalPolicy,
     sandbox,
   });
-  const tools = createToolDefinitions({ maxPermission: sandbox });
-  const transcript: string[] = [];
-  const requiresModification = goalLikelyRequiresModification(options.goal);
-  let successfulModification = false;
-  const messages: ChatMessage[] = [
-    {
-      role: "system",
-      content: [
-        "You are Solarcido, a direct coding assistant for the current repository.",
-        "Work like a coding terminal assistant: inspect files, edit files, run commands, and finish only when the task is done.",
-        "Use tools whenever you need repository context or need to make changes.",
-        "If the goal asks for code or documentation changes, do not stop at a plan or expected actions; inspect the relevant files, make the edits with edit_file or write_file, then verify.",
-        "Prefer search_files for locating code, read_file with offset/limit for focused inspection, and edit_file for small precise changes.",
-        "Use write_file only when creating a new file or replacing a whole file is clearly safer.",
-        "After edits, run the most relevant verification command when one exists.",
-        "Command failures are returned as tool output; inspect exit_code, stdout, and stderr before deciding the next step.",
-        "Stay inside the provided working directory.",
-        `Current sandbox mode: ${sandbox}. Current approval policy: ${approvalPolicy}.`,
-        "Do not create a plan/review split unless the user explicitly asks for it.",
-        "If you describe planned actions without tool calls, you have not executed the task yet.",
-        "When the task is complete, call the finish tool.",
-      ].join(" "),
-    },
-    {
-      role: "user",
-      content: [
-        `Goal: ${options.goal}`,
-        `Working directory: ${cwd}`,
-      ].join("\n"),
-    },
-  ];
-
-  // Print assistant messages only if not quiet.
-  if (!options.quiet) {
-    console.log(`\n[assistant] Working in ${cwd}`);
-    console.log(`[assistant] Session ${session.id}`);
-  }
-
-  try {
-    const orchestrationResult = await orchestrateGoal(client, options.goal, cwd, reasoningEffort, selectedModel, approvalPolicy, sandbox);
-    await completeSession(session, {
-      summary: orchestrationResult.summary,
-      changedFiles: orchestrationResult.changedFiles,
-      nextSteps: orchestrationResult.nextSteps,
-    });
-    printFinish({
-      summary: orchestrationResult.summary,
-      changed_files: orchestrationResult.changedFiles,
-      next_steps: orchestrationResult.nextSteps,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await failSession(session, message);
-    throw error;
-  }
-}
-
-/**
- * Reduce a tool result to a single line for the on-screen log. The full
- * content still goes into the model's transcript.
- */
-function summarizeToolOutput(content: string): string {
-  const trimmed = content.replace(/s+$/, "");
-  if (!trimmed) return "(empty)";
-  const cap = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}...` : s);
-  const lines = trimmed.split(/\r?\n/);
-  if (lines.length === 1) return cap(lines[0], 200);
-  return `${cap(lines[0], 160)}  [+${lines.length - 1} more lines]`;
-}
-
-const SOLAR_WAIT_NOTICE_MS = 5_000;
-const SOLAR_WAIT_INTERVAL_MS = 15_000;
-
-async function waitForSolarResponse<T>(
-  request: () => Promise<T>,
-  options: { quiet?: boolean; model: string; reasoningEffort: ReasoningEffort },
-): Promise<T> {
-  const startedAt = Date.now();
-  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-  let intervalTimer: ReturnType<typeof setInterval> | undefined;
-  let printedWaitNotice = false;
 
   if (!options.quiet) {
-    console.log(
-      `[status] Sending request to Solar API (model=${options.model}, reasoning=${options.reasoningEffort})...`,
-    );
-
-    noticeTimer = setTimeout(() => {
-      printedWaitNotice = true;
-      console.log(`[status] Waiting for Solar response (${formatElapsed(Date.now() - startedAt)} elapsed)...`);
-      intervalTimer = setInterval(() => {
-        console.log(`[status] Still waiting for Solar response (${formatElapsed(Date.now() - startedAt)} elapsed)...`);
-      }, SOLAR_WAIT_INTERVAL_MS);
-    }, SOLAR_WAIT_NOTICE_MS);
+    console.log(`[assistant] Session ${summary.session.id}`);
   }
-
-  try {
-    const response = await request();
-    if (!options.quiet && printedWaitNotice) {
-      console.log(`[status] Solar response received after ${formatElapsed(Date.now() - startedAt)}.`);
-    }
-    return response;
-  } finally {
-    if (noticeTimer) clearTimeout(noticeTimer);
-    if (intervalTimer) clearInterval(intervalTimer);
-  }
-}
-
-function formatElapsed(milliseconds: number): string {
-  const totalSeconds = Math.max(0, Math.round(milliseconds / 1_000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes === 0) return `${seconds}s`;
-  return `${minutes}m ${seconds}s`;
+  printFinish(summary.finish);
 }
 
 /**
@@ -173,7 +72,7 @@ function formatElapsed(milliseconds: number): string {
 function printFinish(finish: FinishPayload): void {
   console.log(`\n[done] ${finish.summary}`);
   if (finish.changed_files.length > 0) {
-    console.log(`[done] Changed files: ${finish.changed_files.join(", ")});`);
+    console.log(`[done] Changed files: ${finish.changed_files.join(", ")}`);
   }
   if (finish.next_steps.length > 0) {
     console.log("[done] Next steps:");
@@ -182,4 +81,3 @@ function printFinish(finish: FinishPayload): void {
     }
   }
 }
-

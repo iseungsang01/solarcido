@@ -6,8 +6,9 @@ import test from "node:test";
 
 import { classifyCommand } from "../dist/approvals/classify-command.js";
 import { decideApproval } from "../dist/approvals/policy.js";
+import { PermissionEnforcer } from "../dist/runtime/permission-enforcer.js";
 import { verifyExecution } from "../dist/agents/verifier.js";
-import { createToolDefinitions, executeToolCall } from "../dist/tools/registry.js";
+import { GlobalToolRegistry, createToolDefinitions, executeToolCall } from "../dist/tools/registry.js";
 
 function toolCall(name, args) {
   return {
@@ -51,6 +52,39 @@ test("decideApproval denies unapproved risky commands for on-request", () => {
     approved: false,
     reason: "Command requires approval.",
   });
+});
+
+test("PermissionEnforcer decides tool permissions from sandbox policy", () => {
+  const enforcer = new PermissionEnforcer({
+    approvalPolicy: "never",
+    sandbox: "read-only",
+  });
+
+  assert.deepEqual(enforcer.decideTool("read-only", "read_file"), { approved: true });
+  assert.deepEqual(enforcer.decideTool("workspace-write", "write_file"), {
+    approved: false,
+    reason: "write_file is disabled in read-only sandbox mode.",
+  });
+});
+
+test("PermissionEnforcer preserves command approval policy decisions", async () => {
+  const denied = new PermissionEnforcer({
+    approvalPolicy: "on-request",
+    sandbox: "workspace-write",
+    approveCommand: async () => false,
+  });
+  const approved = new PermissionEnforcer({
+    approvalPolicy: "on-request",
+    sandbox: "workspace-write",
+    approveCommand: async () => true,
+  });
+
+  assert.deepEqual(await denied.decideCommand("git push origin main"), {
+    approved: false,
+    reason: "Command requires approval.",
+  });
+  assert.deepEqual(await approved.decideCommand("git push origin main"), { approved: true });
+  assert.deepEqual(await denied.decideCommand("npm run build"), { approved: true });
 });
 
 test("executeToolCall blocks writes in read-only sandbox", async () => {
@@ -168,6 +202,69 @@ test("verifier exposes and enforces read-only tools only", async () => {
   });
 });
 
+test("GlobalToolRegistry supports normalized allowed tool filtering", () => {
+  const registry = new GlobalToolRegistry();
+
+  const names = registry.definitions({
+    allowedTools: new Set(["bash", "grep-search", "finish"]),
+    maxPermission: "workspace-write",
+  }).map((tool) => tool.function.name);
+
+  assert.deepEqual(names, ["search_files", "run_command", "finish"]);
+  assert.deepEqual(registry.permissionSpecs({ allowedTools: new Set(["bash"]) }), [["run_command", "workspace-write"]]);
+});
+
+test("GlobalToolRegistry returns structured errors for unknown tools", async () => {
+  await withTempWorkspace(async (root) => {
+    const registry = new GlobalToolRegistry();
+    const result = await registry.execute("missing_tool", {}, {
+      root,
+      approvalPolicy: "never",
+      sandbox: "workspace-write",
+    });
+
+    assert.deepEqual(result, {
+      toolName: "missing_tool",
+      content: "ERROR: unsupported tool: missing_tool",
+    });
+  });
+});
+
+test("executeToolCall keeps edit ambiguity as a structured tool error", async () => {
+  await withTempWorkspace(async (root) => {
+    await writeFile(path.join(root, "a.txt"), "same same", "utf8");
+
+    const result = await executeToolCall(root, toolCall("edit_file", {
+      path: "a.txt",
+      old_string: "same",
+      new_string: "other",
+    }), {
+      approvalPolicy: "never",
+      sandbox: "workspace-write",
+    });
+
+    assert.deepEqual(result, {
+      toolName: "edit_file",
+      content: "ERROR: old_string appears 2 times in a.txt; set replace_all true or provide more context.",
+    });
+  });
+});
+
+test("executeToolCall keeps command output structured", async () => {
+  await withTempWorkspace(async (root) => {
+    const result = await executeToolCall(root, toolCall("run_command", {
+      command: "node -e \"console.log('ok')\"",
+    }), {
+      approvalPolicy: "never",
+      sandbox: "workspace-write",
+    });
+
+    assert.equal(result.toolName, "run_command");
+    assert.match(result.content, /exit_code:/);
+    assert.match(result.content, /stdout:\s*ok/);
+  });
+});
+
 test("executeToolCall blocks unapproved risky commands for on-request policy", async () => {
   await withTempWorkspace(async (root) => {
     const result = await executeToolCall(root, toolCall("run_command", { command: "git push origin main" }), {
@@ -179,5 +276,27 @@ test("executeToolCall blocks unapproved risky commands for on-request policy", a
       toolName: "run_command",
       content: "ERROR: Command requires approval.",
     });
+  });
+});
+
+test("GlobalToolRegistry uses injected PermissionEnforcer for risky command approval", async () => {
+  await withTempWorkspace(async (root) => {
+    const registry = new GlobalToolRegistry();
+    const result = await registry.execute("run_command", {
+      command: "npm install --version",
+    }, {
+      root,
+      approvalPolicy: "on-request",
+      sandbox: "workspace-write",
+      permissionEnforcer: new PermissionEnforcer({
+        approvalPolicy: "on-request",
+        sandbox: "workspace-write",
+        approveCommand: async () => true,
+      }),
+    });
+
+    assert.equal(result.toolName, "run_command");
+    assert.match(result.content, /exit_code:/);
+    assert.doesNotMatch(result.content, /Command requires approval/);
   });
 });

@@ -27,7 +27,9 @@ Core modules:
 - `src/index.ts`: process entrypoint, dotenv loading, top-level error handling.
 - `src/cli.ts`: command-line parsing and help text.
 - `src/interactive.ts`: terminal session loop and slash commands.
-- `src/workflow/run-agent-loop.ts`: direct model/tool loop.
+- `src/workflow/run-agent-loop.ts`: one-shot workflow wrapper over the runtime.
+- `src/runtime/conversation.ts`: direct model/tool loop, session lifecycle, prompt/message assembly, finish detection, and runtime error handling.
+- `src/runtime/prompt.ts`: system prompt construction for runtime turns.
 - `src/workflow/orchestrator.ts`: target multi-agent workflow coordinator.
 - `src/agents/`: target role-specific agent loops for planning, exploration, execution, verification, and review.
 - `src/tools/registry.ts`: tool schema definitions, argument validation, and dispatch.
@@ -197,7 +199,7 @@ The current workflow loop must:
 
 - Send a concise system prompt describing Solarcido's role and available tool strategy.
 - Preserve the full tool output in model-visible messages.
-- Print compact tool output summaries to the terminal.
+- Keep CLI formatting outside the runtime loop; one-shot CLI output prints the final structured finish summary.
 - Stop only when `finish` is called, the user interrupts the process, or an external runtime/API limit is reached.
 - Treat tool execution errors as model-visible results when recovery is possible.
 
