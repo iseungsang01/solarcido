@@ -91,7 +91,11 @@ Required slash commands:
 /verbose
 /exit
 /quit
+/version
+/diff
 ```
+
+`/version` prints the CLI version + build info (owner: `src/commands/introspection.ts`, output: version/commit/node/platform lines, verification: `tests/commands-introspection.test.mjs`). `/diff` prints the working-tree `git diff` for the session cwd, degrading to a clean message outside a git repo (owner: `src/commands/introspection.ts`, verification: `tests/commands-introspection.test.mjs`).
 
 Interactive constraints:
 

@@ -91,5 +91,17 @@ export const SLASH_COMMAND_SPECS: SlashCommandSpec[] = [
     argumentHint: "list|show",
     resumeSupported: true,
   },
+  {
+    name: "version",
+    aliases: [],
+    summary: "show version and build info",
+    resumeSupported: true,
+  },
+  {
+    name: "diff",
+    aliases: [],
+    summary: "show working-tree git diff",
+    resumeSupported: true,
+  },
 ];
 

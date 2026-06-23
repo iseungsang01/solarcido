@@ -2,6 +2,7 @@ import type { ApprovalPolicy, SandboxMode } from "../runtime/config.js";
 import type { ReasoningEffort } from "../api/client.js";
 
 import { formatSlashCommandHelp, type ResolvedSlashCommand } from "./registry.js";
+import { formatVersionInfo, getVersionInfo, getWorkingDiff } from "./introspection.js";
 
 export type SlashCommandSession = {
   cwd: string;
@@ -105,6 +106,12 @@ export async function dispatchSlashCommand(
       return "handled";
     case "sessions":
       output.writeLine("  solarcido sessions list | sessions show <id>");
+      return "handled";
+    case "version":
+      output.writeLine(formatVersionInfo(getVersionInfo()));
+      return "handled";
+    case "diff":
+      output.writeLine(await getWorkingDiff(session.cwd));
       return "handled";
     case "exit":
       return "exit";

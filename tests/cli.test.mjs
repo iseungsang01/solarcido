@@ -137,6 +137,8 @@ test("slash command registry exposes required commands and aliases", () => {
     "exit",
     "config",
     "sessions",
+    "version",
+    "diff",
   ]);
   assert.equal(parseSlashCommand("/quit")?.name, "exit");
   assert.equal(parseSlashCommand("/")?.name, "help");
