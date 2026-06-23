@@ -60,6 +60,8 @@ function createRuntime(apiClient, extra = {}) {
     sessionStore: createMemorySessionStore(),
     permissionEnforcer: new PermissionEnforcer({ approvalPolicy: "never", sandbox: "workspace-write" }),
     promptBuilder: new SystemPromptBuilder(),
+    // Keep the suite hermetic: never spawn a real `git` subprocess.
+    gitContextProvider: async () => undefined,
     ...extra,
   });
 }

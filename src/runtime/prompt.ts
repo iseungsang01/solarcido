@@ -4,11 +4,13 @@ export type SystemPromptInput = {
   cwd: string;
   approvalPolicy: ApprovalPolicy;
   sandbox: SandboxMode;
+  /** Optional rendered git context (branch / recent commits / staged files). */
+  gitContext?: string;
 };
 
 export class SystemPromptBuilder {
   build(input: SystemPromptInput): string {
-    return [
+    const base = [
       "You are Solarcido, a direct coding assistant for the current repository.",
       "Work like a coding terminal assistant: inspect files, edit files, run commands, and finish only when the task is done.",
       "Use tools whenever you need repository context or need to make changes.",
@@ -24,5 +26,11 @@ export class SystemPromptBuilder {
       "If you describe planned actions without tool calls, you have not executed the task yet.",
       "When the task is complete, call the finish tool.",
     ].join(" ");
+
+    if (input.gitContext && input.gitContext.trim() !== "") {
+      return `${base}\n\n${input.gitContext}`;
+    }
+
+    return base;
   }
 }

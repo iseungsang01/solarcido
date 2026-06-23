@@ -6,6 +6,7 @@ import {
 import type { ApiClient, ChatMessage, ChatToolCall, ReasoningEffort } from "../api/client.js";
 import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT } from "../api/client.js";
 import { classifyApiError, formatClassifiedError } from "../api/errors.js";
+import { detectAndRenderGitContext } from "./git-context.js";
 import { GlobalToolRegistry } from "../tools/registry.js";
 import type { FinishPayload, ToolExecutionResult } from "../tools/specs.js";
 import { estimateTranscriptTokens } from "../workflow/context-budget.js";
@@ -50,6 +51,11 @@ export type ConversationRuntimeOptions = {
   permissionEnforcer: PermissionEnforcer;
   promptBuilder: SystemPromptBuilder;
   maxTranscriptTokens?: number;
+  /**
+   * Resolves rendered git context for a working directory. Injectable so tests
+   * stay hermetic (no real `git` subprocess); defaults to live git detection.
+   */
+  gitContextProvider?: (cwd: string) => Promise<string | undefined>;
 };
 
 const DEFAULT_MAX_TURNS = 20;
@@ -62,6 +68,7 @@ export class ConversationRuntime {
   private readonly permissionEnforcer: PermissionEnforcer;
   private readonly promptBuilder: SystemPromptBuilder;
   private readonly maxTranscriptTokens: number;
+  private readonly gitContextProvider: (cwd: string) => Promise<string | undefined>;
 
   constructor(options: ConversationRuntimeOptions) {
     this.apiClient = options.apiClient;
@@ -70,6 +77,7 @@ export class ConversationRuntime {
     this.permissionEnforcer = options.permissionEnforcer;
     this.promptBuilder = options.promptBuilder;
     this.maxTranscriptTokens = options.maxTranscriptTokens ?? DEFAULT_MAX_TRANSCRIPT_TOKENS;
+    this.gitContextProvider = options.gitContextProvider ?? ((cwd) => detectAndRenderGitContext(cwd));
   }
 
   async runTurn(input: RunTurnInput): Promise<TurnSummary> {
@@ -94,11 +102,13 @@ export class ConversationRuntime {
       sandbox,
     });
 
+    const gitContext = await this.gitContextProvider(input.cwd).catch(() => undefined);
+
     const transcript: string[] = [];
     const messages: ChatMessage[] = [
       {
         role: "system",
-        content: this.promptBuilder.build({ cwd: input.cwd, approvalPolicy, sandbox }),
+        content: this.promptBuilder.build({ cwd: input.cwd, approvalPolicy, sandbox, gitContext }),
       },
       {
         role: "user",
