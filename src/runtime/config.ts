@@ -13,6 +13,7 @@ export type SolarcidoConfig = {
   approvalPolicy: ApprovalPolicy;
   sandbox: SandboxMode;
   quiet: boolean;
+  stream: boolean;
 };
 
 export const DEFAULT_CONFIG: SolarcidoConfig = {
@@ -21,6 +22,7 @@ export const DEFAULT_CONFIG: SolarcidoConfig = {
   approvalPolicy: "on-failure",
   sandbox: "workspace-write",
   quiet: false,
+  stream: false,
 };
 
 export const CONFIG_KEYS = [
@@ -29,6 +31,7 @@ export const CONFIG_KEYS = [
   "approvalPolicy",
   "sandbox",
   "quiet",
+  "stream",
 ] as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
@@ -111,6 +114,10 @@ export function parseConfigValue(key: ConfigKey, rawValue: string): SolarcidoCon
       if (rawValue === "true") return true;
       if (rawValue === "false") return false;
       throw new Error("quiet must be true or false.");
+    case "stream":
+      if (rawValue === "true") return true;
+      if (rawValue === "false") return false;
+      throw new Error("stream must be true or false.");
   }
 }
 
@@ -172,6 +179,9 @@ function validateConfigField(key: ConfigKey, value: unknown): SolarcidoConfig[Co
     case "quiet":
       if (typeof value === "boolean") return value;
       throw new Error("quiet must be a boolean.");
+    case "stream":
+      if (typeof value === "boolean") return value;
+      throw new Error("stream must be a boolean.");
   }
 }
 

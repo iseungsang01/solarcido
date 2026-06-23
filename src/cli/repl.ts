@@ -13,6 +13,7 @@ export type InteractiveOptions = {
   approvalPolicy?: ApprovalPolicy;
   sandbox?: SandboxMode;
   quiet?: boolean;
+  stream?: boolean;
 };
 
 const ESC = "";
@@ -417,6 +418,7 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
     approvalPolicy: options.approvalPolicy ?? "on-failure",
     sandbox: options.sandbox ?? "workspace-write",
     quiet: options.quiet ?? false,
+    stream: options.stream ?? false,
   };
 
   printShellHeader(session);
@@ -469,6 +471,7 @@ export async function startInteractiveShell(options: InteractiveOptions): Promis
         approvalPolicy: session.approvalPolicy,
         sandbox: session.sandbox,
         quiet: session.quiet,
+        stream: session.stream,
       });
     }
   } finally {

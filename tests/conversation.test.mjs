@@ -66,6 +66,52 @@ function createRuntime(apiClient, extra = {}) {
   });
 }
 
+const FINISH_RESPONSE = {
+  choices: [{
+    message: {
+      role: "assistant",
+      content: "stream",
+      tool_calls: [toolCall("finish", { summary: "streamed done", changed_files: [], next_steps: [] })],
+    },
+  }],
+};
+
+function streamingClient(response = FINISH_RESPONSE, deltas = ["str", "eam"]) {
+  return {
+    async chat() {
+      return response;
+    },
+    async *chatStream() {
+      for (const text of deltas) yield { type: "delta", text };
+      yield { type: "done", response };
+    },
+  };
+}
+
+test("ConversationRuntime streams deltas and completes via chatStream", async () => {
+  const deltas = [];
+  const summary = await createRuntime(streamingClient()).runTurn({
+    goal: "show me",
+    cwd: process.cwd(),
+    stream: true,
+    onDelta: (text) => deltas.push(text),
+  });
+  assert.equal(summary.finish.summary, "streamed done");
+  assert.deepEqual(deltas, ["str", "eam"]);
+});
+
+test("ConversationRuntime streaming and buffered paths reach the same finish", async () => {
+  const streamed = await createRuntime(streamingClient()).runTurn({ goal: "go", cwd: process.cwd(), stream: true });
+  const buffered = await createRuntime(streamingClient()).runTurn({ goal: "go", cwd: process.cwd(), stream: false });
+  assert.equal(streamed.finish.summary, buffered.finish.summary);
+});
+
+test("ConversationRuntime falls back to chat when streaming is requested but unsupported", async () => {
+  const client = { async chat() { return FINISH_RESPONSE; } };
+  const summary = await createRuntime(client).runTurn({ goal: "go", cwd: process.cwd(), stream: true });
+  assert.equal(summary.finish.summary, "streamed done");
+});
+
 test("ConversationRuntime preserves injected command approval callbacks", async () => {
   let approvalPrompted = false;
   const client = {

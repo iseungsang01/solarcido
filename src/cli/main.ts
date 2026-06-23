@@ -31,6 +31,7 @@ Options:
   --sandbox <mode>       read-only | workspace-write
   --quiet                suppress assistant chat messages
   --resume <id>          continue a saved session (see: sessions list)
+  --stream / --no-stream stream model output token-by-token (config: stream)
 
 Interactive shell:
 ${formatCliInteractiveHelp()}

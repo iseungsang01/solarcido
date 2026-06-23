@@ -28,6 +28,10 @@ export type RunWorkflowOptions = {
    * Resume a prior session by id, seeding its persisted transcript.
    */
   resume?: string;
+  /**
+   * Stream model output token-by-token to stdout.
+   */
+  stream?: boolean;
 };
 
 /**
@@ -66,6 +70,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     promptBuilder: new SystemPromptBuilder(),
   });
 
+  const stream = options.stream === true;
   const summary = await runtime.runTurn({
     goal: options.goal,
     cwd,
@@ -74,6 +79,8 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     approvalPolicy,
     sandbox,
     resumeMessages,
+    stream,
+    onDelta: stream && !options.quiet ? (text) => process.stdout.write(text) : undefined,
   });
 
   if (!options.quiet) {

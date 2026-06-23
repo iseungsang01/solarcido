@@ -53,6 +53,12 @@ export type ChatRunOptions = {
   model?: string;
 };
 
+export type ChatStreamEvent =
+  | { type: "delta"; text: string }
+  | { type: "done"; response: ChatResponse };
+
 export interface ApiClient {
   chat(options: ChatRunOptions): Promise<ChatResponse>;
+  /** Optional streaming variant: yields text deltas, then a final `done` with the full response. */
+  chatStream?(options: ChatRunOptions): AsyncIterable<ChatStreamEvent>;
 }

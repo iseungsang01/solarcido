@@ -9,6 +9,7 @@ export type CliDefaults = {
   approvalPolicy: ApprovalPolicy;
   sandbox: SandboxMode;
   quiet: boolean;
+  stream: boolean;
 };
 
 export type CliCommand =
@@ -21,6 +22,7 @@ export type CliCommand =
       approvalPolicy: ApprovalPolicy;
       sandbox: SandboxMode;
       quiet: boolean;
+      stream: boolean;
       resume?: string;
     }
   | {
@@ -31,6 +33,7 @@ export type CliCommand =
       approvalPolicy: ApprovalPolicy;
       sandbox: SandboxMode;
       quiet: boolean;
+      stream: boolean;
     }
   | {
       mode: "config";
@@ -60,6 +63,7 @@ const BUILT_IN_DEFAULTS: CliDefaults = {
   approvalPolicy: "on-failure",
   sandbox: "workspace-write",
   quiet: false,
+  stream: false,
 };
 
 export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DEFAULTS): CliCommand {
@@ -74,6 +78,7 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
       approvalPolicy: defaults.approvalPolicy,
       sandbox: defaults.sandbox,
       quiet: defaults.quiet,
+      stream: defaults.stream,
     };
   }
 
@@ -142,10 +147,21 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
   let approvalPolicy = defaults.approvalPolicy;
   let sandbox = defaults.sandbox;
   let quiet = defaults.quiet;
+  let stream = defaults.stream;
   let resume: string | undefined;
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+
+    if (token === "--stream") {
+      stream = true;
+      continue;
+    }
+
+    if (token === "--no-stream") {
+      stream = false;
+      continue;
+    }
 
     if (token === "--resume") {
       const value = rest[index + 1]?.trim();
@@ -235,6 +251,7 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
     approvalPolicy,
     sandbox,
     quiet,
+    stream,
     resume,
   };
 }

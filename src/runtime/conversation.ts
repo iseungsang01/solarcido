@@ -3,7 +3,7 @@ import {
   goalLikelyRequiresModification,
   isSuccessfulModificationTool,
 } from "../agents/execution-guard.js";
-import type { ApiClient, ChatMessage, ChatToolCall, ReasoningEffort } from "../api/client.js";
+import type { ApiClient, ChatMessage, ChatResponse, ChatRunOptions, ChatToolCall, ReasoningEffort } from "../api/client.js";
 import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT } from "../api/client.js";
 import { classifyApiError, formatClassifiedError } from "../api/errors.js";
 import { detectAndRenderGitContext } from "./git-context.js";
@@ -32,6 +32,10 @@ export type RunTurnInput = {
   maxTurns?: number;
   /** Prior conversation messages to continue from (`--resume`). */
   resumeMessages?: ChatMessage[];
+  /** Stream model output token-by-token (opt-in). */
+  stream?: boolean;
+  /** Called with each streamed text delta when streaming is enabled. */
+  onDelta?: (text: string) => void;
 };
 
 export type TurnSummary = {
@@ -129,14 +133,18 @@ export class ConversationRuntime {
       for (let turn = 1; turn <= maxTurns; turn += 1) {
         this.compactIfNeeded(messages, transcript);
 
-        const response = await this.apiClient.chat({
-          model,
-          messages,
-          tools: this.toolRegistry.definitions({ maxPermission: sandbox }),
-          toolChoice: "auto",
-          reasoningEffort,
-          temperature: 0.2,
-        });
+        const response = await this.requestCompletion(
+          {
+            model,
+            messages,
+            tools: this.toolRegistry.definitions({ maxPermission: sandbox }),
+            toolChoice: "auto",
+            reasoningEffort,
+            temperature: 0.2,
+          },
+          input.stream === true,
+          input.onDelta,
+        );
         sessionUsage = addUsage(sessionUsage, normalizeUsage(response.usage));
 
         const message = response.choices[0]?.message;
@@ -222,6 +230,29 @@ export class ConversationRuntime {
       maxPermission: sandbox,
       permissionEnforcer,
     });
+  }
+
+  private async requestCompletion(
+    params: ChatRunOptions,
+    stream: boolean,
+    onDelta?: (text: string) => void,
+  ): Promise<ChatResponse> {
+    if (stream && this.apiClient.chatStream) {
+      let response: ChatResponse | undefined;
+      for await (const event of this.apiClient.chatStream(params)) {
+        if (event.type === "delta") {
+          onDelta?.(event.text);
+        } else {
+          response = event.response;
+        }
+      }
+      if (!response) {
+        throw new Error("Streaming response ended without a completion.");
+      }
+      return response;
+    }
+
+    return this.apiClient.chat(params);
   }
 
   private compactIfNeeded(messages: ChatMessage[], transcript: string[]): void {
