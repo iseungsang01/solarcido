@@ -5,6 +5,7 @@ import {
 } from "../agents/execution-guard.js";
 import type { ApiClient, ChatMessage, ChatToolCall, ReasoningEffort } from "../api/client.js";
 import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT } from "../api/client.js";
+import { classifyApiError, formatClassifiedError } from "../api/errors.js";
 import { GlobalToolRegistry } from "../tools/registry.js";
 import type { FinishPayload, ToolExecutionResult } from "../tools/specs.js";
 import { estimateTranscriptTokens } from "../workflow/context-budget.js";
@@ -169,7 +170,9 @@ export class ConversationRuntime {
 
       throw new Error(`Conversation runtime exceeded maxTurns (${maxTurns}) before finish.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      // Classify only to record a cleaner failure reason; re-throw the ORIGINAL
+      // error unchanged so callers (and tests) observe the same thrown value.
+      const message = formatClassifiedError(classifyApiError(error));
       await this.sessionStore.fail(session, message);
       throw error;
     }
