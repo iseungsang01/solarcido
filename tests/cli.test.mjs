@@ -100,6 +100,14 @@ test("parseCliArgs parses the orchestrate command", () => {
   assert.throws(() => parseCliArgs(["orchestrate"]), /goal string is required/);
 });
 
+test("parseCliArgs parses the cron command", () => {
+  const command = parseCliArgs(["cron", "cron.json", "--model", "grok-3"]);
+  assert.equal(command.mode, "cron");
+  assert.match(command.file, /cron\.json$/);
+  assert.equal(command.model, "grok-3");
+  assert.throws(() => parseCliArgs(["cron"]), /Usage: solarcido cron/);
+});
+
 test("parseCliArgs accepts config commands", () => {
   assert.deepEqual(parseCliArgs(["config", "path"]), {
     mode: "config",

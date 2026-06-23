@@ -9,6 +9,7 @@ import { formatInitReport, initializeRepo } from "./init.js";
 import { formatTeamReport, loadTasksFile, runTeam } from "../workflow/team.js";
 import { formatOrchestrationResult, orchestrateGoal } from "../workflow/orchestrator.js";
 import { createApiClientForModel } from "../api/client.js";
+import { loadCronJobs, runCronDaemon } from "../workflow/cron-daemon.js";
 
 export function printHelp(): void {
   console.log(`
@@ -22,6 +23,7 @@ Usage:
   solarcido init [--cwd .]
   solarcido team <tasks.json> [--concurrency N] [--cwd .] [--model name] [--sandbox ...]
   solarcido orchestrate "your goal" [--cwd .] [--model name] [--sandbox ...]
+  solarcido cron <cron.json> [--cwd .] [--model name] [--sandbox ...]
   solarcido config get [key]
   solarcido config set <key> <value>
   solarcido config path
@@ -95,6 +97,18 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         command.sandbox,
       );
       console.log(formatOrchestrationResult(result));
+      return;
+    }
+    case "cron": {
+      const jobs = loadCronJobs(command.file);
+      await runCronDaemon({
+        jobs,
+        cwd: command.cwd,
+        reasoningEffort: command.reasoningEffort,
+        model: command.model,
+        approvalPolicy: command.approvalPolicy,
+        sandbox: command.sandbox,
+      });
       return;
     }
   }

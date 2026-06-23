@@ -67,6 +67,15 @@ export type CliCommand =
       sandbox: SandboxMode;
       quiet: boolean;
     }
+  | {
+      mode: "cron";
+      file: string;
+      cwd: string;
+      reasoningEffort: ReasoningEffort;
+      model: string;
+      approvalPolicy: ApprovalPolicy;
+      sandbox: SandboxMode;
+    }
   | { mode: "init"; cwd: string }
   | { mode: "help" };
 
@@ -157,7 +166,7 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
     return { mode: "init", cwd };
   }
 
-  if (mode !== "run" && mode !== "team" && mode !== "orchestrate") {
+  if (mode !== "run" && mode !== "team" && mode !== "orchestrate" && mode !== "cron") {
     throw new Error(`Unknown command: ${mode}`);
   }
 
@@ -283,6 +292,22 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
       sandbox,
       quiet,
       concurrency,
+    };
+  }
+
+  if (mode === "cron") {
+    const file = positional[0];
+    if (!file) {
+      throw new Error("Usage: solarcido cron <cron.json> [run flags]");
+    }
+    return {
+      mode: "cron",
+      file: path.resolve(file),
+      cwd,
+      reasoningEffort,
+      model,
+      approvalPolicy,
+      sandbox,
     };
   }
 

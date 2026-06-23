@@ -58,8 +58,15 @@ solarcido run "<goal>" --resume <id>
 solarcido init [--cwd .]
 solarcido team <tasks.json> [--concurrency N]
 solarcido orchestrate "<goal>"
+solarcido cron <cron.json>
 solarcido --help
 ```
+
+`solarcido cron` is an in-process daemon that fires scheduled goals (owner:
+`src/workflow/cron-daemon.ts` + `src/runtime/cron/*`; input: a JSON array or
+`{jobs:[…]}` of `{name,schedule,goal}` with 5-field UTC cron schedules; it loops
+until killed, running due goals through the agent loop; verification:
+`tests/cron-daemon.test.mjs`).
 
 `solarcido orchestrate` runs the multi-agent pipeline (owner:
 `src/workflow/orchestrator.ts` `orchestrateGoal`; planner → explorer → executor
