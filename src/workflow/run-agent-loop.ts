@@ -5,6 +5,9 @@ import { promptForCommandApproval } from "../approvals/prompt.js";
 import type { ApprovalPolicy, SandboxMode } from "../runtime/config.js";
 import { ConversationRuntime, createDefaultSessionStore } from "../runtime/conversation.js";
 import { loadSessionForResume } from "../runtime/session.js";
+import { buildMcpManager, loadMcpServers } from "../runtime/mcp/config.js";
+import { mcpToolsAsRuntimeTools } from "../tools/mcp-tools.js";
+import type { RuntimeToolDefinition } from "../tools/specs.js";
 import { PermissionEnforcer } from "../runtime/permission-enforcer.js";
 import { SystemPromptBuilder } from "../runtime/prompt.js";
 import { GlobalToolRegistry, type FinishPayload } from "../tools/registry.js";
@@ -58,9 +61,31 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     }
   }
 
+  const mcpServers = loadMcpServers();
+  let mcpManager: ReturnType<typeof buildMcpManager> | undefined;
+  let runtimeTools: RuntimeToolDefinition[] = [];
+  if (Object.keys(mcpServers).length > 0) {
+    try {
+      mcpManager = buildMcpManager(mcpServers);
+      const { tools, failedServers } = await mcpManager.discoverToolsBestEffort();
+      runtimeTools = mcpToolsAsRuntimeTools(tools, (name, args) => mcpManager!.invoke(name, args));
+      if (!options.quiet) {
+        const failed = failedServers.length > 0 ? `, ${failedServers.length} server(s) failed` : "";
+        console.log(`[assistant] MCP: ${tools.length} tool(s) from ${Object.keys(mcpServers).length} server(s)${failed}`);
+      }
+    } catch (error) {
+      // MCP must never break a run.
+      mcpManager?.shutdown();
+      mcpManager = undefined;
+      if (!options.quiet) {
+        console.log(`[assistant] MCP disabled: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
   const runtime = new ConversationRuntime({
     apiClient: client,
-    toolRegistry: new GlobalToolRegistry(),
+    toolRegistry: new GlobalToolRegistry({ runtimeTools }),
     sessionStore: createDefaultSessionStore(),
     permissionEnforcer: new PermissionEnforcer({
       approvalPolicy,
@@ -71,23 +96,27 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
   });
 
   const stream = options.stream === true;
-  const summary = await runtime.runTurn({
-    goal: options.goal,
-    cwd,
-    reasoningEffort,
-    model: selectedModel,
-    approvalPolicy,
-    sandbox,
-    resumeMessages,
-    stream,
-    onDelta: stream && !options.quiet ? (text) => process.stdout.write(text) : undefined,
-  });
+  try {
+    const summary = await runtime.runTurn({
+      goal: options.goal,
+      cwd,
+      reasoningEffort,
+      model: selectedModel,
+      approvalPolicy,
+      sandbox,
+      resumeMessages,
+      stream,
+      onDelta: stream && !options.quiet ? (text) => process.stdout.write(text) : undefined,
+    });
 
-  if (!options.quiet) {
-    console.log(`[assistant] Session ${summary.session.id}`);
-    printUsage(summary.usage, selectedModel);
+    if (!options.quiet) {
+      console.log(`[assistant] Session ${summary.session.id}`);
+      printUsage(summary.usage, selectedModel);
+    }
+    printFinish(summary.finish);
+  } finally {
+    mcpManager?.shutdown();
   }
-  printFinish(summary.finish);
 }
 
 /**
