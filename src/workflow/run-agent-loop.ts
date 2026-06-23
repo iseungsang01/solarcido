@@ -7,6 +7,7 @@ import { ConversationRuntime, createDefaultSessionStore } from "../runtime/conve
 import { PermissionEnforcer } from "../runtime/permission-enforcer.js";
 import { SystemPromptBuilder } from "../runtime/prompt.js";
 import { GlobalToolRegistry, type FinishPayload } from "../tools/registry.js";
+import { estimateCostUsd, formatUsd, pricingForModel, type TokenUsage } from "../runtime/usage.js";
 
 /**
  * Run workflow options.
@@ -62,8 +63,22 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
 
   if (!options.quiet) {
     console.log(`[assistant] Session ${summary.session.id}`);
+    printUsage(summary.usage, selectedModel);
   }
   printFinish(summary.finish);
+}
+
+/**
+ * Print token usage and (best-effort) cost for the run.
+ */
+function printUsage(usage: TokenUsage, model: string): void {
+  if (usage.totalTokens <= 0) return;
+
+  const pricing = pricingForModel(model);
+  const cost = pricing ? ` (${formatUsd(estimateCostUsd(usage, pricing))})` : "";
+  console.log(
+    `[assistant] Tokens: ${usage.inputTokens} in + ${usage.outputTokens} out = ${usage.totalTokens}${cost}`,
+  );
 }
 
 /**

@@ -7,6 +7,7 @@ import type { ApiClient, ChatMessage, ChatToolCall, ReasoningEffort } from "../a
 import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT } from "../api/client.js";
 import { classifyApiError, formatClassifiedError } from "../api/errors.js";
 import { detectAndRenderGitContext } from "./git-context.js";
+import { addUsage, emptyUsage, normalizeUsage, type TokenUsage } from "./usage.js";
 import { GlobalToolRegistry } from "../tools/registry.js";
 import type { FinishPayload, ToolExecutionResult } from "../tools/specs.js";
 import { estimateTranscriptTokens } from "../workflow/context-budget.js";
@@ -36,6 +37,7 @@ export type TurnSummary = {
   finish: FinishPayload;
   transcript: string[];
   turns: number;
+  usage: TokenUsage;
 };
 
 export type SessionStore = {
@@ -93,6 +95,7 @@ export class ConversationRuntime {
     });
     const requiresModification = goalLikelyRequiresModification(input.goal);
     let successfulModification = false;
+    let sessionUsage = emptyUsage();
     let session = await this.sessionStore.create({
       goal: input.goal,
       cwd: input.cwd,
@@ -128,6 +131,8 @@ export class ConversationRuntime {
           reasoningEffort,
           temperature: 0.2,
         });
+        sessionUsage = addUsage(sessionUsage, normalizeUsage(response.usage));
+
         const message = response.choices[0]?.message;
         if (!message) {
           throw new Error("Conversation runtime received no assistant message.");
@@ -173,7 +178,7 @@ export class ConversationRuntime {
               changedFiles: result.finish.changed_files,
               nextSteps: result.finish.next_steps,
             });
-            return { session, finish: result.finish, transcript, turns: turn };
+            return { session, finish: result.finish, transcript, turns: turn, usage: sessionUsage };
           }
         }
       }

@@ -30,10 +30,17 @@ export type ChatTool = {
 export type ChatToolChoice = "none" | "auto" | "required" | Record<string, unknown>;
 export type ChatResponseFormat = Record<string, unknown>;
 
+export type ChatUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+};
+
 export type ChatResponse = {
   choices: Array<{
     message?: ChatMessage;
   }>;
+  usage?: ChatUsage;
 };
 
 export type ChatRunOptions = {
