@@ -5,6 +5,7 @@ import { formatCliInteractiveHelp } from "../commands/registry.js";
 
 import { parseCliArgs, type CliCommand } from "./parse-args.js";
 import { startInteractiveShell } from "./repl.js";
+import { formatInitReport, initializeRepo } from "./init.js";
 
 export function printHelp(): void {
   console.log(`
@@ -15,6 +16,7 @@ TypeScript CLI for the current repository.
 Usage:
   solarcido
   solarcido run "your goal" [--cwd .] [--reasoning low|medium|high] [--model name] [--approval-policy on-failure|on-request|never] [--sandbox read-only|workspace-write] [--quiet]
+  solarcido init [--cwd .]
   solarcido config get [key]
   solarcido config set <key> <value>
   solarcido config path
@@ -54,6 +56,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     case "sessions":
       await handleSessionsCommand(command);
       return;
+    case "init": {
+      const report = await initializeRepo(command.cwd);
+      console.log(formatInitReport(report));
+      return;
+    }
   }
 }
 

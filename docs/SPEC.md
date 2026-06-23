@@ -54,8 +54,11 @@ Required commands:
 ```txt
 solarcido
 solarcido run "<goal>"
+solarcido init [--cwd .]
 solarcido --help
 ```
+
+`solarcido init` scaffolds project guidance (owner: `src/cli/init.ts`; input: optional `--cwd`; output: an idempotent `InitReport` of CLAUDE.md + .gitignore artifacts tagged created/updated/skipped; verification: `tests/init.test.mjs`).
 
 Required flags:
 
@@ -93,7 +96,10 @@ Required slash commands:
 /quit
 /version
 /diff
+/init
 ```
+
+`/init` runs the same scaffolding as `solarcido init` for the session cwd (owner: `src/cli/init.ts`, verification: `tests/init.test.mjs`).
 
 `/version` prints the CLI version + build info (owner: `src/commands/introspection.ts`, output: version/commit/node/platform lines, verification: `tests/commands-introspection.test.mjs`). `/diff` prints the working-tree `git diff` for the session cwd, degrading to a clean message outside a git repo (owner: `src/commands/introspection.ts`, verification: `tests/commands-introspection.test.mjs`).
 

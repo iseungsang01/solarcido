@@ -42,6 +42,7 @@ export type CliCommand =
       action: "list" | "show";
       id?: string;
     }
+  | { mode: "init"; cwd: string }
   | { mode: "help" };
 
 function parseReasoningEffort(value: string | undefined): ReasoningEffort {
@@ -116,6 +117,17 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
     }
 
     throw new Error("Usage: solarcido sessions list | sessions show <id>");
+  }
+
+  if (mode === "init") {
+    let cwd = process.cwd();
+    for (let index = 0; index < rest.length; index += 1) {
+      if (rest[index] === "--cwd") {
+        cwd = path.resolve(rest[index + 1] ?? process.cwd());
+        index += 1;
+      }
+    }
+    return { mode: "init", cwd };
   }
 
   if (mode !== "run") {

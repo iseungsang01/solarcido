@@ -67,6 +67,14 @@ test("parseCliArgs rejects unknown commands", () => {
   assert.throws(() => parseCliArgs(["unknown"]), /Unknown command/);
 });
 
+test("parseCliArgs parses the init command", () => {
+  const command = parseCliArgs(["init"]);
+  assert.equal(command.mode, "init");
+  assert.equal(typeof command.cwd, "string");
+  const withCwd = parseThinCliArgs(["init", "--cwd", "."]);
+  assert.equal(withCwd.mode, "init");
+});
+
 test("parseCliArgs accepts config commands", () => {
   assert.deepEqual(parseCliArgs(["config", "path"]), {
     mode: "config",
@@ -139,6 +147,7 @@ test("slash command registry exposes required commands and aliases", () => {
     "sessions",
     "version",
     "diff",
+    "init",
   ]);
   assert.equal(parseSlashCommand("/quit")?.name, "exit");
   assert.equal(parseSlashCommand("/")?.name, "help");

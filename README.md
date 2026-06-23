@@ -40,6 +40,13 @@ You can also run a single task directly:
 solarcido run "refactor the command parser" --cwd . --reasoning high
 ```
 
+Scaffold assistant guidance for a repository (idempotent — creates `CLAUDE.md`
+and `.gitignore` entries if missing):
+
+```bash
+solarcido init --cwd .
+```
+
 Persistent defaults live in `~/.solarcido/config.json`, or under
 `SOLARCIDO_HOME/config.json` when `SOLARCIDO_HOME` is set:
 

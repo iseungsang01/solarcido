@@ -3,6 +3,7 @@ import type { ReasoningEffort } from "../api/client.js";
 
 import { formatSlashCommandHelp, type ResolvedSlashCommand } from "./registry.js";
 import { formatVersionInfo, getVersionInfo, getWorkingDiff } from "./introspection.js";
+import { formatInitReport, initializeRepo } from "../cli/init.js";
 
 export type SlashCommandSession = {
   cwd: string;
@@ -113,6 +114,11 @@ export async function dispatchSlashCommand(
     case "diff":
       output.writeLine(await getWorkingDiff(session.cwd));
       return "handled";
+    case "init": {
+      const report = await initializeRepo(session.cwd);
+      output.writeLine(formatInitReport(report));
+      return "handled";
+    }
     case "exit":
       return "exit";
     default:

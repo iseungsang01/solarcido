@@ -103,5 +103,11 @@ export const SLASH_COMMAND_SPECS: SlashCommandSpec[] = [
     summary: "show working-tree git diff",
     resumeSupported: true,
   },
+  {
+    name: "init",
+    aliases: [],
+    summary: "scaffold project guidance (CLAUDE.md, .gitignore)",
+    resumeSupported: false,
+  },
 ];
 
