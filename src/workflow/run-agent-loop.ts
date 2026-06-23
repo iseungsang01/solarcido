@@ -8,6 +8,8 @@ import { loadSessionForResume } from "../runtime/session.js";
 import { buildMcpManager, loadMcpServers } from "../runtime/mcp/config.js";
 import { mcpToolsAsRuntimeTools } from "../tools/mcp-tools.js";
 import type { RuntimeToolDefinition } from "../tools/specs.js";
+import { HookRunner } from "../runtime/hooks.js";
+import { loadHookConfig } from "../runtime/hooks-config.js";
 import { PermissionEnforcer } from "../runtime/permission-enforcer.js";
 import { SystemPromptBuilder } from "../runtime/prompt.js";
 import { GlobalToolRegistry, type FinishPayload } from "../tools/registry.js";
@@ -83,6 +85,12 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     }
   }
 
+  const hookConfig = loadHookConfig();
+  const hookCount = hookConfig.preToolUse.length + hookConfig.postToolUse.length + hookConfig.postToolUseFailure.length;
+  if (hookCount > 0 && !options.quiet) {
+    console.log(`[assistant] Hooks: ${hookCount} configured`);
+  }
+
   const runtime = new ConversationRuntime({
     apiClient: client,
     toolRegistry: new GlobalToolRegistry({ runtimeTools }),
@@ -93,6 +101,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
       approveCommand: promptForCommandApproval,
     }),
     promptBuilder: new SystemPromptBuilder(),
+    hookRunner: new HookRunner(hookConfig),
   });
 
   const stream = options.stream === true;

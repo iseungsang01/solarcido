@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ConversationRuntime } from "../dist/runtime/conversation.js";
+import { HookRunner } from "../dist/runtime/hooks.js";
 import { PermissionEnforcer } from "../dist/runtime/permission-enforcer.js";
 import { SystemPromptBuilder } from "../dist/runtime/prompt.js";
 import { GlobalToolRegistry } from "../dist/tools/registry.js";
@@ -110,6 +111,45 @@ test("ConversationRuntime falls back to chat when streaming is requested but uns
   const client = { async chat() { return FINISH_RESPONSE; } };
   const summary = await createRuntime(client).runTurn({ goal: "go", cwd: process.cwd(), stream: true });
   assert.equal(summary.finish.summary, "streamed done");
+});
+
+test("ConversationRuntime PreToolUse hook can block a tool call", async () => {
+  let blockedToolContent;
+  const client = {
+    async chat(options) {
+      const lastTool = options.messages.findLast?.((m) => m.role === "tool");
+      if (lastTool) {
+        blockedToolContent = lastTool.content;
+        return {
+          choices: [{
+            message: { role: "assistant", content: "", tool_calls: [toolCall("finish", { summary: "done", changed_files: [], next_steps: [] })] },
+          }],
+        };
+      }
+      return {
+        choices: [{
+          message: { role: "assistant", content: "", tool_calls: [toolCall("read_file", { path: "secret.txt" })] },
+        }],
+      };
+    },
+  };
+  // A hook that denies only read_file (exit 2); other tools (e.g. finish) pass.
+  const denyExecutor = async (_command, env) =>
+    env.HOOK_TOOL_NAME === "read_file"
+      ? { exitCode: 2, stdout: "no reads allowed", stderr: "" }
+      : { exitCode: 0, stdout: "", stderr: "" };
+  const hookRunner = new HookRunner({ preToolUse: ["deny.sh"] }, denyExecutor);
+
+  const summary = await createRuntime(client, { hookRunner }).runTurn({
+    goal: "look at the file",
+    cwd: process.cwd(),
+    approvalPolicy: "never",
+    sandbox: "workspace-write",
+  });
+
+  assert.equal(summary.finish.summary, "done");
+  assert.match(blockedToolContent, /blocked by PreToolUse hook/);
+  assert.match(blockedToolContent, /no reads allowed/);
 });
 
 test("ConversationRuntime preserves injected command approval callbacks", async () => {

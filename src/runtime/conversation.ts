@@ -9,6 +9,7 @@ import { classifyApiError, formatClassifiedError } from "../api/errors.js";
 import { detectAndRenderGitContext } from "./git-context.js";
 import { addUsage, emptyUsage, normalizeUsage, type TokenUsage } from "./usage.js";
 import { formatCompactSummary } from "./compaction.js";
+import { HookRunner } from "./hooks.js";
 import { GlobalToolRegistry } from "../tools/registry.js";
 import type { FinishPayload, ToolExecutionResult } from "../tools/specs.js";
 import { estimateTranscriptTokens } from "../workflow/context-budget.js";
@@ -65,6 +66,11 @@ export type ConversationRuntimeOptions = {
    * stay hermetic (no real `git` subprocess); defaults to live git detection.
    */
   gitContextProvider?: (cwd: string) => Promise<string | undefined>;
+  /**
+   * Runs PreToolUse/PostToolUse hooks around each tool call. Defaults to a
+   * no-op runner (no configured hooks), so tool execution is unchanged.
+   */
+  hookRunner?: HookRunner;
 };
 
 const DEFAULT_MAX_TURNS = 20;
@@ -82,6 +88,7 @@ export class ConversationRuntime {
   private readonly promptBuilder: SystemPromptBuilder;
   private readonly maxTranscriptTokens: number;
   private readonly gitContextProvider: (cwd: string) => Promise<string | undefined>;
+  private readonly hookRunner: HookRunner;
   private lastSummaryTurn = Number.NEGATIVE_INFINITY;
 
   constructor(options: ConversationRuntimeOptions) {
@@ -92,6 +99,7 @@ export class ConversationRuntime {
     this.promptBuilder = options.promptBuilder;
     this.maxTranscriptTokens = options.maxTranscriptTokens ?? DEFAULT_MAX_TRANSCRIPT_TOKENS;
     this.gitContextProvider = options.gitContextProvider ?? ((cwd) => detectAndRenderGitContext(cwd));
+    this.hookRunner = options.hookRunner ?? new HookRunner({});
   }
 
   async runTurn(input: RunTurnInput): Promise<TurnSummary> {
@@ -176,7 +184,23 @@ export class ConversationRuntime {
         }
 
         for (const toolCall of message.tool_calls) {
-          const result = await this.executeToolCall(input.cwd, toolCall, approvalPolicy, sandbox, permissionEnforcer);
+          const toolName = toolCall.function.name;
+          const toolInput = toolCall.function.arguments || "{}";
+
+          let result: ToolExecutionResult;
+          const pre = await this.hookRunner.runPreToolUse(toolName, toolInput);
+          if (pre.denied) {
+            const reason = pre.messages.length > 0 ? `: ${pre.messages.join("; ")}` : "";
+            result = { toolName, content: `ERROR: blocked by PreToolUse hook${reason}` };
+          } else {
+            result = await this.executeToolCall(input.cwd, toolCall, approvalPolicy, sandbox, permissionEnforcer);
+            if (result.content.startsWith("ERROR:")) {
+              await this.hookRunner.runPostToolUseFailure(toolName, toolInput, result.content);
+            } else {
+              await this.hookRunner.runPostToolUse(toolName, toolInput, result.content, false);
+            }
+          }
+
           const content = result.finish && requiresModification && !successfulModification
             ? blockedPrematureFinishMessage()
             : result.content;
