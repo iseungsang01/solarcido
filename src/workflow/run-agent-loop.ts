@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { createApiClient, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ChatMessage, type ReasoningEffort } from "../api/client.js";
+import { createApiClientForModel, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ChatMessage, type ReasoningEffort } from "../api/client.js";
 import { promptForCommandApproval } from "../approvals/prompt.js";
 import type { ApprovalPolicy, SandboxMode } from "../runtime/config.js";
 import { ConversationRuntime, createDefaultSessionStore } from "../runtime/conversation.js";
@@ -43,10 +43,10 @@ export type RunWorkflowOptions = {
  * Run the workflow.
  */
 export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
-  const client = createApiClient();
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const reasoningEffort = options.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
   const selectedModel = options.model ?? DEFAULT_MODEL;
+  const client = createApiClientForModel(selectedModel);
   const approvalPolicy = options.approvalPolicy ?? "on-failure";
   const sandbox = options.sandbox ?? "workspace-write";
 
