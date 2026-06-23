@@ -8,6 +8,7 @@ import { DEFAULT_MODEL, DEFAULT_REASONING_EFFORT } from "../api/client.js";
 import { classifyApiError, formatClassifiedError } from "../api/errors.js";
 import { detectAndRenderGitContext } from "./git-context.js";
 import { addUsage, emptyUsage, normalizeUsage, type TokenUsage } from "./usage.js";
+import { formatCompactSummary } from "./compaction.js";
 import { GlobalToolRegistry } from "../tools/registry.js";
 import type { FinishPayload, ToolExecutionResult } from "../tools/specs.js";
 import { estimateTranscriptTokens } from "../workflow/context-budget.js";
@@ -68,6 +69,10 @@ export type ConversationRuntimeOptions = {
 
 const DEFAULT_MAX_TURNS = 20;
 const DEFAULT_MAX_TRANSCRIPT_TOKENS = 90 * 131_072 / 100;
+/** Pay for a model-generated compaction summary at most once every N turns. */
+const MIN_TURNS_BETWEEN_SUMMARIES = 3;
+const COMPACTION_NOTICE =
+  "Earlier tool transcript was compacted. Continue from the latest visible messages and preserve completed work.";
 
 export class ConversationRuntime {
   private readonly apiClient: ApiClient;
@@ -77,6 +82,7 @@ export class ConversationRuntime {
   private readonly promptBuilder: SystemPromptBuilder;
   private readonly maxTranscriptTokens: number;
   private readonly gitContextProvider: (cwd: string) => Promise<string | undefined>;
+  private lastSummaryTurn = Number.NEGATIVE_INFINITY;
 
   constructor(options: ConversationRuntimeOptions) {
     this.apiClient = options.apiClient;
@@ -131,7 +137,7 @@ export class ConversationRuntime {
 
     try {
       for (let turn = 1; turn <= maxTurns; turn += 1) {
-        this.compactIfNeeded(messages, transcript);
+        await this.compactIfNeeded(messages, transcript, turn, model);
 
         const response = await this.requestCompletion(
           {
@@ -255,19 +261,62 @@ export class ConversationRuntime {
     return this.apiClient.chat(params);
   }
 
-  private compactIfNeeded(messages: ChatMessage[], transcript: string[]): void {
+  private async compactIfNeeded(
+    messages: ChatMessage[],
+    transcript: string[],
+    turn: number,
+    model: string,
+  ): Promise<void> {
     if (estimateTranscriptTokens(transcript) <= this.maxTranscriptTokens) {
       return;
     }
 
-    const preserved = messages.slice(0, 2);
+    const head = messages.slice(0, 2);
     const recent = safeRecentMessages(messages.slice(2), 12);
+    const dropped = messages.slice(head.length, messages.length - recent.length);
+
+    // Replace the dropped middle with a model-generated summary, but pay for
+    // that model call at most once every MIN_TURNS_BETWEEN_SUMMARIES turns;
+    // otherwise (or on failure) fall back to a plain notice. This bounds cost
+    // and never blocks the loop on a summarization failure.
+    let summaryContent = COMPACTION_NOTICE;
+    if (dropped.length > 0 && turn - this.lastSummaryTurn >= MIN_TURNS_BETWEEN_SUMMARIES) {
+      const summary = await this.summarizeDropped(dropped, model);
+      if (summary) {
+        summaryContent = formatCompactSummary(summary);
+        this.lastSummaryTurn = turn;
+      }
+    }
+
     messages.length = 0;
-    messages.push(...preserved, {
-      role: "user",
-      content: "Earlier tool transcript was compacted. Continue from the latest visible messages and preserve completed work.",
-    }, ...recent);
+    messages.push(...head, { role: "user", content: summaryContent }, ...recent);
     transcript.splice(0, Math.max(0, transcript.length - 24));
+  }
+
+  private async summarizeDropped(dropped: ChatMessage[], model: string): Promise<string | undefined> {
+    try {
+      const segment = dropped
+        .map((message) => `${message.role}: ${message.content ?? ""}`)
+        .join("\n")
+        .slice(0, 8000);
+      const response = await this.apiClient.chat({
+        model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Summarize the following conversation segment in a few concise bullet points capturing decisions, files touched, and pending work. Output only the summary.",
+          },
+          { role: "user", content: segment },
+        ],
+        reasoningEffort: "low",
+        temperature: 0,
+      });
+      const summary = response.choices[0]?.message?.content?.trim();
+      return summary && summary.length > 0 ? summary : undefined;
+    } catch {
+      return undefined;
+    }
   }
 }
 

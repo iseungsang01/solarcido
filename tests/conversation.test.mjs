@@ -283,31 +283,35 @@ test("ConversationRuntime enforces read-only sandbox for hidden write tool calls
   assert.equal(summary.finish.summary, "blocked write");
 });
 
-test("ConversationRuntime compacts without dangling tool-call messages", async () => {
-  let callCount = 0;
+test("ConversationRuntime compacts with an async model summary (structural)", async () => {
+  let turnCalls = 0;
+  let summaryCalls = 0;
+  let compactedSeen = false;
   const client = {
     async chat(options) {
-      callCount += 1;
+      if (options.messages[0]?.content?.includes("Summarize the following conversation segment")) {
+        summaryCalls += 1;
+        return { choices: [{ message: { role: "assistant", content: "- inspected a missing file" } }] };
+      }
 
-      if (callCount === 2) {
-        assert.equal(options.messages.some((message) => message.role === "tool"), false);
-        assert.equal(options.messages.some((message) => message.role === "assistant" && message.tool_calls?.length), false);
-        assert.equal(options.messages.some((message) => message.content?.includes("Earlier tool transcript was compacted")), true);
+      turnCalls += 1;
+      if (turnCalls === 2) {
+        // The transcript was compacted before this turn: no dangling tool /
+        // tool-call messages, exactly one inserted summary message after the
+        // 2-message head, and the message count strictly dropped.
+        assert.equal(options.messages.some((m) => m.role === "tool"), false);
+        assert.equal(options.messages.some((m) => m.role === "assistant" && m.tool_calls?.length), false);
+        assert.equal(options.messages[2].role, "user");
+        assert.match(options.messages[2].content, /inspected a missing file/);
+        assert.ok(options.messages.length < 4);
+        compactedSeen = true;
       }
 
       return {
         choices: [{
-          message: callCount === 1
-            ? {
-                role: "assistant",
-                content: "",
-                tool_calls: [toolCall("read_file", { path: "missing.txt" })],
-              }
-            : {
-                role: "assistant",
-                content: "",
-                tool_calls: [toolCall("finish", { summary: "compacted", changed_files: [], next_steps: [] })],
-              },
+          message: turnCalls === 1
+            ? { role: "assistant", content: "", tool_calls: [toolCall("read_file", { path: "missing.txt" })] }
+            : { role: "assistant", content: "", tool_calls: [toolCall("finish", { summary: "compacted", changed_files: [], next_steps: [] })] },
         }],
       };
     },
@@ -321,7 +325,44 @@ test("ConversationRuntime compacts without dangling tool-call messages", async (
   });
 
   assert.equal(summary.finish.summary, "compacted");
-  assert.equal(callCount, 2);
+  assert.equal(summaryCalls, 1);
+  assert.equal(compactedSeen, true);
+});
+
+test("ConversationRuntime compaction falls back to a notice when summarization fails", async () => {
+  let turnCalls = 0;
+  const client = {
+    async chat(options) {
+      if (options.messages[0]?.content?.includes("Summarize the following conversation segment")) {
+        throw new Error("summary unavailable");
+      }
+
+      turnCalls += 1;
+      if (turnCalls === 2) {
+        assert.equal(
+          options.messages.some((m) => m.content?.includes("Earlier tool transcript was compacted")),
+          true,
+        );
+      }
+
+      return {
+        choices: [{
+          message: turnCalls === 1
+            ? { role: "assistant", content: "", tool_calls: [toolCall("read_file", { path: "missing.txt" })] }
+            : { role: "assistant", content: "", tool_calls: [toolCall("finish", { summary: "ok", changed_files: [], next_steps: [] })] },
+        }],
+      };
+    },
+  };
+
+  const summary = await createRuntime(client, { maxTranscriptTokens: 1 }).runTurn({
+    goal: "inspect files",
+    cwd: process.cwd(),
+    approvalPolicy: "never",
+    sandbox: "workspace-write",
+  });
+
+  assert.equal(summary.finish.summary, "ok");
 });
 
 test("ConversationRuntime enforces max turn guard", async () => {
