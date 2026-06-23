@@ -108,6 +108,15 @@ test("parseCliArgs parses the cron command", () => {
   assert.throws(() => parseCliArgs(["cron"]), /Usage: solarcido cron/);
 });
 
+test("parseCliArgs parses the lsp command", () => {
+  const command = parseCliArgs(["lsp", "src/x.ts", "--server", "tsserver --stdio", "--settle-ms", "500"]);
+  assert.equal(command.mode, "lsp");
+  assert.match(command.file, /x\.ts$/);
+  assert.equal(command.server, "tsserver --stdio");
+  assert.equal(command.settleMs, 500);
+  assert.throws(() => parseCliArgs(["lsp"]), /Usage: solarcido lsp/);
+});
+
 test("parseCliArgs accepts config commands", () => {
   assert.deepEqual(parseCliArgs(["config", "path"]), {
     mode: "config",

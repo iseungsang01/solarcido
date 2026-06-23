@@ -61,6 +61,12 @@ verifier → reviewer):
 solarcido orchestrate "refactor the auth module and verify"
 ```
 
+Print a file's diagnostics from a language server (requires the server on PATH):
+
+```bash
+solarcido lsp src/index.ts --server "typescript-language-server --stdio"
+```
+
 Persistent defaults live in `~/.solarcido/config.json`, or under
 `SOLARCIDO_HOME/config.json` when `SOLARCIDO_HOME` is set:
 

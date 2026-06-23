@@ -10,6 +10,7 @@ import { formatTeamReport, loadTasksFile, runTeam } from "../workflow/team.js";
 import { formatOrchestrationResult, orchestrateGoal } from "../workflow/orchestrator.js";
 import { createApiClientForModel } from "../api/client.js";
 import { loadCronJobs, runCronDaemon } from "../workflow/cron-daemon.js";
+import { runLspDiagnosticsCommand } from "../workflow/lsp-command.js";
 
 export function printHelp(): void {
   console.log(`
@@ -24,6 +25,7 @@ Usage:
   solarcido team <tasks.json> [--concurrency N] [--cwd .] [--model name] [--sandbox ...]
   solarcido orchestrate "your goal" [--cwd .] [--model name] [--sandbox ...]
   solarcido cron <cron.json> [--cwd .] [--model name] [--sandbox ...]
+  solarcido lsp <file> [--server "<command>"] [--settle-ms N]
   solarcido config get [key]
   solarcido config set <key> <value>
   solarcido config path
@@ -109,6 +111,15 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         approvalPolicy: command.approvalPolicy,
         sandbox: command.sandbox,
       });
+      return;
+    }
+    case "lsp": {
+      const output = await runLspDiagnosticsCommand({
+        file: command.file,
+        server: command.server,
+        settleMs: command.settleMs,
+      });
+      console.log(output);
       return;
     }
   }

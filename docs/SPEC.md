@@ -59,8 +59,15 @@ solarcido init [--cwd .]
 solarcido team <tasks.json> [--concurrency N]
 solarcido orchestrate "<goal>"
 solarcido cron <cron.json>
+solarcido lsp <file> [--server "<command>"]
 solarcido --help
 ```
+
+`solarcido lsp` opens a file in a language server and prints its diagnostics
+(owner: `src/workflow/lsp-command.ts` + `src/runtime/lsp/client.ts`; input: a
+file path, optional `--server "<command>"` override and `--settle-ms`; output:
+1-based diagnostics or a clean empty message; verification:
+`tests/lsp-command.test.mjs`). Requires the language server on PATH.
 
 `solarcido cron` is an in-process daemon that fires scheduled goals (owner:
 `src/workflow/cron-daemon.ts` + `src/runtime/cron/*`; input: a JSON array or

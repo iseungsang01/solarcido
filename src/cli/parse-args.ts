@@ -77,6 +77,7 @@ export type CliCommand =
       sandbox: SandboxMode;
     }
   | { mode: "init"; cwd: string }
+  | { mode: "lsp"; file: string; server?: string; settleMs?: number }
   | { mode: "help" };
 
 function parseReasoningEffort(value: string | undefined): ReasoningEffort {
@@ -164,6 +165,34 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
       }
     }
     return { mode: "init", cwd };
+  }
+
+  if (mode === "lsp") {
+    const lspPositional: string[] = [];
+    let server: string | undefined;
+    let settleMs: number | undefined;
+    for (let index = 0; index < rest.length; index += 1) {
+      const token = rest[index];
+      if (token === "--server") {
+        server = rest[index + 1];
+        if (!server) throw new Error("--server requires a command string.");
+        index += 1;
+        continue;
+      }
+      if (token === "--settle-ms") {
+        const raw = Number(rest[index + 1]);
+        if (!Number.isFinite(raw) || raw < 0) throw new Error("--settle-ms must be a non-negative number.");
+        settleMs = raw;
+        index += 1;
+        continue;
+      }
+      lspPositional.push(token);
+    }
+    const file = lspPositional[0];
+    if (!file) {
+      throw new Error('Usage: solarcido lsp <file> [--server "<command>"] [--settle-ms N]');
+    }
+    return { mode: "lsp", file: path.resolve(file), server, settleMs };
   }
 
   if (mode !== "run" && mode !== "team" && mode !== "orchestrate" && mode !== "cron") {
