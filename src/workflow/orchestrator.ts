@@ -71,3 +71,18 @@ export async function orchestrateGoal(
 
   return orchestrationResult;
 }
+
+/** Render an orchestration result for the CLI. */
+export function formatOrchestrationResult(result: OrchestrationResult): string {
+  const lines = [result.summary];
+  for (const agent of result.agentResults) {
+    lines.push(`  [${agent.role}] ${agent.summary}`);
+  }
+  if (result.changedFiles.length > 0) {
+    lines.push(`Changed files: ${result.changedFiles.join(", ")}`);
+  }
+  if (result.nextSteps.length > 0) {
+    lines.push(`Next steps: ${result.nextSteps.join("; ")}`);
+  }
+  return lines.join("\n");
+}

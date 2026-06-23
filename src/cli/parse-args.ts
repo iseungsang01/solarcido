@@ -57,6 +57,16 @@ export type CliCommand =
       quiet: boolean;
       concurrency: number;
     }
+  | {
+      mode: "orchestrate";
+      goal: string;
+      cwd: string;
+      reasoningEffort: ReasoningEffort;
+      model: string;
+      approvalPolicy: ApprovalPolicy;
+      sandbox: SandboxMode;
+      quiet: boolean;
+    }
   | { mode: "init"; cwd: string }
   | { mode: "help" };
 
@@ -147,7 +157,7 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
     return { mode: "init", cwd };
   }
 
-  if (mode !== "run" && mode !== "team") {
+  if (mode !== "run" && mode !== "team" && mode !== "orchestrate") {
     throw new Error(`Unknown command: ${mode}`);
   }
 
@@ -280,6 +290,10 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
 
   if (!goal) {
     throw new Error("A goal string is required.");
+  }
+
+  if (mode === "orchestrate") {
+    return { mode: "orchestrate", goal, cwd, reasoningEffort, model, approvalPolicy, sandbox, quiet };
   }
 
   return {

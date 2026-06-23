@@ -57,8 +57,14 @@ solarcido run "<goal>"
 solarcido run "<goal>" --resume <id>
 solarcido init [--cwd .]
 solarcido team <tasks.json> [--concurrency N]
+solarcido orchestrate "<goal>"
 solarcido --help
 ```
+
+`solarcido orchestrate` runs the multi-agent pipeline (owner:
+`src/workflow/orchestrator.ts` `orchestrateGoal`; planner → explorer → executor
+→ verifier → reviewer over the Solar client; output: a per-agent summary;
+verification: `tests/orchestrator.test.mjs`).
 
 `solarcido team` runs a batch of goals from a tasks file through the agent loop
 (owner: `src/workflow/team.ts`; input: a JSON array or `{tasks:[…]}` of strings

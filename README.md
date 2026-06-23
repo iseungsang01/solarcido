@@ -54,6 +54,13 @@ through the agent loop, optionally in parallel:
 solarcido team tasks.json --concurrency 2
 ```
 
+Run a goal through the multi-agent pipeline (planner → explorer → executor →
+verifier → reviewer):
+
+```bash
+solarcido orchestrate "refactor the auth module and verify"
+```
+
 Persistent defaults live in `~/.solarcido/config.json`, or under
 `SOLARCIDO_HOME/config.json` when `SOLARCIDO_HOME` is set:
 

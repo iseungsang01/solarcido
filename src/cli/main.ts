@@ -7,6 +7,8 @@ import { parseCliArgs, type CliCommand } from "./parse-args.js";
 import { startInteractiveShell } from "./repl.js";
 import { formatInitReport, initializeRepo } from "./init.js";
 import { formatTeamReport, loadTasksFile, runTeam } from "../workflow/team.js";
+import { formatOrchestrationResult, orchestrateGoal } from "../workflow/orchestrator.js";
+import { createApiClientForModel } from "../api/client.js";
 
 export function printHelp(): void {
   console.log(`
@@ -19,6 +21,7 @@ Usage:
   solarcido run "your goal" [--cwd .] [--reasoning low|medium|high] [--model name] [--approval-policy on-failure|on-request|never] [--sandbox read-only|workspace-write] [--quiet] [--resume <id>]
   solarcido init [--cwd .]
   solarcido team <tasks.json> [--concurrency N] [--cwd .] [--model name] [--sandbox ...]
+  solarcido orchestrate "your goal" [--cwd .] [--model name] [--sandbox ...]
   solarcido config get [key]
   solarcido config set <key> <value>
   solarcido config path
@@ -78,6 +81,20 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         quiet: command.quiet,
       });
       console.log(formatTeamReport(report));
+      return;
+    }
+    case "orchestrate": {
+      const client = createApiClientForModel(command.model);
+      const result = await orchestrateGoal(
+        client,
+        command.goal,
+        command.cwd,
+        command.reasoningEffort,
+        command.model,
+        command.approvalPolicy,
+        command.sandbox,
+      );
+      console.log(formatOrchestrationResult(result));
       return;
     }
   }

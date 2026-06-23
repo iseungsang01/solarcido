@@ -92,6 +92,14 @@ test("parseCliArgs parses the team command", () => {
   assert.throws(() => parseCliArgs(["team", "f.json", "--concurrency", "0"]), /positive integer/);
 });
 
+test("parseCliArgs parses the orchestrate command", () => {
+  const command = parseCliArgs(["orchestrate", "build", "the", "thing", "--sandbox", "read-only"]);
+  assert.equal(command.mode, "orchestrate");
+  assert.equal(command.goal, "build the thing");
+  assert.equal(command.sandbox, "read-only");
+  assert.throws(() => parseCliArgs(["orchestrate"]), /goal string is required/);
+});
+
 test("parseCliArgs accepts config commands", () => {
   assert.deepEqual(parseCliArgs(["config", "path"]), {
     mode: "config",
