@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
+import { extractTextFromBytes, isPdfPath } from "./pdf-extract.js";
+
 type ToolResult = {
   ok: boolean;
   output: string;
@@ -125,8 +127,21 @@ export async function listFiles(root: string, targetPath = ".", depth = 2, inclu
   };
 }
 
+const MAX_PDF_BYTES = 16 * 1024 * 1024;
+
 export async function readFile(root: string, targetPath: string, offset?: number, limit?: number): Promise<ToolResult> {
   const resolved = resolveInsideRoot(root, targetPath);
+
+  if (isPdfPath(resolved)) {
+    const stat = await fs.stat(resolved);
+    if (stat.size > MAX_PDF_BYTES) {
+      throw new Error(`PDF is too large (${stat.size} bytes; limit ${MAX_PDF_BYTES}).`);
+    }
+    const bytes = await fs.readFile(resolved);
+    const text = extractTextFromBytes(bytes);
+    return { ok: true, output: text || "<no extractable text in PDF>" };
+  }
+
   const stat = await fs.stat(resolved);
 
   if (stat.size > MAX_FILE_BYTES && limit === undefined) {

@@ -22,7 +22,7 @@ export const BUILTIN_TOOL_SPECS: ToolSpec[] = [
   },
   {
     name: "read_file",
-    description: "Read a UTF-8 text file inside the working directory.",
+    description: "Read a UTF-8 text file inside the working directory. A .pdf path returns extracted text.",
     requiredPermission: "read-only",
     inputSchema: {
       type: "object",
