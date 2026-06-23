@@ -82,6 +82,16 @@ test("parseCliArgs parses run --resume", () => {
   assert.throws(() => parseCliArgs(["run", "goal", "--resume"]), /--resume requires/);
 });
 
+test("parseCliArgs parses the team command", () => {
+  const command = parseCliArgs(["team", "tasks.json", "--concurrency", "3", "--model", "grok-3"]);
+  assert.equal(command.mode, "team");
+  assert.match(command.file, /tasks\.json$/);
+  assert.equal(command.concurrency, 3);
+  assert.equal(command.model, "grok-3");
+  assert.throws(() => parseCliArgs(["team"]), /Usage: solarcido team/);
+  assert.throws(() => parseCliArgs(["team", "f.json", "--concurrency", "0"]), /positive integer/);
+});
+
 test("parseCliArgs accepts config commands", () => {
   assert.deepEqual(parseCliArgs(["config", "path"]), {
     mode: "config",

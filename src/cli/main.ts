@@ -6,6 +6,7 @@ import { formatCliInteractiveHelp } from "../commands/registry.js";
 import { parseCliArgs, type CliCommand } from "./parse-args.js";
 import { startInteractiveShell } from "./repl.js";
 import { formatInitReport, initializeRepo } from "./init.js";
+import { formatTeamReport, loadTasksFile, runTeam } from "../workflow/team.js";
 
 export function printHelp(): void {
   console.log(`
@@ -17,6 +18,7 @@ Usage:
   solarcido
   solarcido run "your goal" [--cwd .] [--reasoning low|medium|high] [--model name] [--approval-policy on-failure|on-request|never] [--sandbox read-only|workspace-write] [--quiet] [--resume <id>]
   solarcido init [--cwd .]
+  solarcido team <tasks.json> [--concurrency N] [--cwd .] [--model name] [--sandbox ...]
   solarcido config get [key]
   solarcido config set <key> <value>
   solarcido config path
@@ -61,6 +63,21 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     case "init": {
       const report = await initializeRepo(command.cwd);
       console.log(formatInitReport(report));
+      return;
+    }
+    case "team": {
+      const tasks = loadTasksFile(command.file);
+      const report = await runTeam({
+        tasks,
+        cwd: command.cwd,
+        reasoningEffort: command.reasoningEffort,
+        model: command.model,
+        approvalPolicy: command.approvalPolicy,
+        sandbox: command.sandbox,
+        concurrency: command.concurrency,
+        quiet: command.quiet,
+      });
+      console.log(formatTeamReport(report));
       return;
     }
   }

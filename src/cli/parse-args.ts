@@ -46,6 +46,17 @@ export type CliCommand =
       action: "list" | "show";
       id?: string;
     }
+  | {
+      mode: "team";
+      file: string;
+      cwd: string;
+      reasoningEffort: ReasoningEffort;
+      model: string;
+      approvalPolicy: ApprovalPolicy;
+      sandbox: SandboxMode;
+      quiet: boolean;
+      concurrency: number;
+    }
   | { mode: "init"; cwd: string }
   | { mode: "help" };
 
@@ -136,7 +147,7 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
     return { mode: "init", cwd };
   }
 
-  if (mode !== "run") {
+  if (mode !== "run" && mode !== "team") {
     throw new Error(`Unknown command: ${mode}`);
   }
 
@@ -149,6 +160,7 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
   let quiet = defaults.quiet;
   let stream = defaults.stream;
   let resume: string | undefined;
+  let concurrency = 1;
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
@@ -175,6 +187,16 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
 
     if (token === "--cwd") {
       cwd = path.resolve(rest[index + 1] ?? process.cwd());
+      index += 1;
+      continue;
+    }
+
+    if (token === "--concurrency") {
+      const raw = Number(rest[index + 1]);
+      if (!Number.isInteger(raw) || raw < 1) {
+        throw new Error("--concurrency must be a positive integer.");
+      }
+      concurrency = raw;
       index += 1;
       continue;
     }
@@ -234,6 +256,24 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
     }
 
     positional.push(token);
+  }
+
+  if (mode === "team") {
+    const file = positional[0];
+    if (!file) {
+      throw new Error("Usage: solarcido team <tasks.json> [--concurrency N] [run flags]");
+    }
+    return {
+      mode: "team",
+      file: path.resolve(file),
+      cwd,
+      reasoningEffort,
+      model,
+      approvalPolicy,
+      sandbox,
+      quiet,
+      concurrency,
+    };
   }
 
   const goal = positional.join(" ").trim();

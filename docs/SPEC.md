@@ -56,8 +56,15 @@ solarcido
 solarcido run "<goal>"
 solarcido run "<goal>" --resume <id>
 solarcido init [--cwd .]
+solarcido team <tasks.json> [--concurrency N]
 solarcido --help
 ```
+
+`solarcido team` runs a batch of goals from a tasks file through the agent loop
+(owner: `src/workflow/team.ts`; input: a JSON array or `{tasks:[…]}` of strings
+or `{prompt,description}`, plus `--concurrency` and the usual run flags; output:
+a per-task completed/failed report; verification: `tests/team.test.mjs`). Tasks
+run via the TaskRunner over a TaskRegistry; cron scheduling is out of scope.
 
 `--resume <id>` continues a saved session by seeding its persisted message transcript (owner: `src/runtime/session.ts` `loadSessionForResume` + `ConversationRuntime.runTurn` `resumeMessages`; verification: `tests/resume.test.mjs`). Sessions persist their transcript only on completion.
 

@@ -47,6 +47,13 @@ and `.gitignore` entries if missing):
 solarcido init --cwd .
 ```
 
+Run a batch of goals from a tasks file (a JSON array or `{"tasks": [...]}`), each
+through the agent loop, optionally in parallel:
+
+```bash
+solarcido team tasks.json --concurrency 2
+```
+
 Persistent defaults live in `~/.solarcido/config.json`, or under
 `SOLARCIDO_HOME/config.json` when `SOLARCIDO_HOME` is set:
 

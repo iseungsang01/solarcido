@@ -3,7 +3,7 @@ import path from "node:path";
 import { createApiClientForModel, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ChatMessage, type ReasoningEffort } from "../api/client.js";
 import { promptForCommandApproval } from "../approvals/prompt.js";
 import type { ApprovalPolicy, SandboxMode } from "../runtime/config.js";
-import { ConversationRuntime, createDefaultSessionStore } from "../runtime/conversation.js";
+import { ConversationRuntime, createDefaultSessionStore, type TurnSummary } from "../runtime/conversation.js";
 import { loadSessionForResume } from "../runtime/session.js";
 import { buildMcpManager, loadMcpServers } from "../runtime/mcp/config.js";
 import { mcpToolsAsRuntimeTools } from "../tools/mcp-tools.js";
@@ -42,7 +42,7 @@ export type RunWorkflowOptions = {
 /**
  * Run the workflow.
  */
-export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
+export async function runWorkflow(options: RunWorkflowOptions): Promise<TurnSummary> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const reasoningEffort = options.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
   const selectedModel = options.model ?? DEFAULT_MODEL;
@@ -123,6 +123,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
       printUsage(summary.usage, selectedModel);
     }
     printFinish(summary.finish);
+    return summary;
   } finally {
     mcpManager?.shutdown();
   }
