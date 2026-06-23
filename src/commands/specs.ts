@@ -109,5 +109,11 @@ export const SLASH_COMMAND_SPECS: SlashCommandSpec[] = [
     summary: "scaffold project guidance (CLAUDE.md, .gitignore)",
     resumeSupported: false,
   },
+  {
+    name: "resume",
+    aliases: [],
+    summary: "show how to resume a saved session",
+    resumeSupported: false,
+  },
 ];
 

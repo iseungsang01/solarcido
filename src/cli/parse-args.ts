@@ -21,6 +21,7 @@ export type CliCommand =
       approvalPolicy: ApprovalPolicy;
       sandbox: SandboxMode;
       quiet: boolean;
+      resume?: string;
     }
   | {
       mode: "interactive";
@@ -141,9 +142,20 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
   let approvalPolicy = defaults.approvalPolicy;
   let sandbox = defaults.sandbox;
   let quiet = defaults.quiet;
+  let resume: string | undefined;
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+
+    if (token === "--resume") {
+      const value = rest[index + 1]?.trim();
+      if (!value) {
+        throw new Error("--resume requires a session id.");
+      }
+      resume = value;
+      index += 1;
+      continue;
+    }
 
     if (token === "--cwd") {
       cwd = path.resolve(rest[index + 1] ?? process.cwd());
@@ -223,6 +235,7 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
     approvalPolicy,
     sandbox,
     quiet,
+    resume,
   };
 }
 

@@ -75,6 +75,13 @@ test("parseCliArgs parses the init command", () => {
   assert.equal(withCwd.mode, "init");
 });
 
+test("parseCliArgs parses run --resume", () => {
+  const command = parseCliArgs(["run", "continue the work", "--resume", "abc123"]);
+  assert.equal(command.mode, "run");
+  assert.equal(command.resume, "abc123");
+  assert.throws(() => parseCliArgs(["run", "goal", "--resume"]), /--resume requires/);
+});
+
 test("parseCliArgs accepts config commands", () => {
   assert.deepEqual(parseCliArgs(["config", "path"]), {
     mode: "config",
@@ -148,6 +155,7 @@ test("slash command registry exposes required commands and aliases", () => {
     "version",
     "diff",
     "init",
+    "resume",
   ]);
   assert.equal(parseSlashCommand("/quit")?.name, "exit");
   assert.equal(parseSlashCommand("/")?.name, "help");

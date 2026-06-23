@@ -54,9 +54,12 @@ Required commands:
 ```txt
 solarcido
 solarcido run "<goal>"
+solarcido run "<goal>" --resume <id>
 solarcido init [--cwd .]
 solarcido --help
 ```
+
+`--resume <id>` continues a saved session by seeding its persisted message transcript (owner: `src/runtime/session.ts` `loadSessionForResume` + `ConversationRuntime.runTurn` `resumeMessages`; verification: `tests/resume.test.mjs`). Sessions persist their transcript only on completion.
 
 `solarcido init` scaffolds project guidance (owner: `src/cli/init.ts`; input: optional `--cwd`; output: an idempotent `InitReport` of CLAUDE.md + .gitignore artifacts tagged created/updated/skipped; verification: `tests/init.test.mjs`).
 

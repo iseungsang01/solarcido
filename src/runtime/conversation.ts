@@ -30,6 +30,8 @@ export type RunTurnInput = {
   approvalPolicy?: ApprovalPolicy;
   sandbox?: SandboxMode;
   maxTurns?: number;
+  /** Prior conversation messages to continue from (`--resume`). */
+  resumeMessages?: ChatMessage[];
 };
 
 export type TurnSummary = {
@@ -42,7 +44,7 @@ export type TurnSummary = {
 
 export type SessionStore = {
   create(options: CreateSessionOptions): Promise<SessionRecord>;
-  complete(session: SessionRecord, update: { summary: string; changedFiles: string[]; nextSteps: string[] }): Promise<SessionRecord>;
+  complete(session: SessionRecord, update: { summary: string; changedFiles: string[]; nextSteps: string[]; messages?: ChatMessage[] }): Promise<SessionRecord>;
   fail(session: SessionRecord, error: string): Promise<SessionRecord>;
 };
 
@@ -108,16 +110,20 @@ export class ConversationRuntime {
     const gitContext = await this.gitContextProvider(input.cwd).catch(() => undefined);
 
     const transcript: string[] = [];
-    const messages: ChatMessage[] = [
-      {
-        role: "system",
-        content: this.promptBuilder.build({ cwd: input.cwd, approvalPolicy, sandbox, gitContext }),
-      },
-      {
-        role: "user",
-        content: [`Goal: ${input.goal}`, `Working directory: ${input.cwd}`].join("\n"),
-      },
-    ];
+    const goalMessage: ChatMessage = {
+      role: "user",
+      content: [`Goal: ${input.goal}`, `Working directory: ${input.cwd}`].join("\n"),
+    };
+    const messages: ChatMessage[] =
+      input.resumeMessages && input.resumeMessages.length > 0
+        ? [...input.resumeMessages, goalMessage]
+        : [
+            {
+              role: "system",
+              content: this.promptBuilder.build({ cwd: input.cwd, approvalPolicy, sandbox, gitContext }),
+            },
+            goalMessage,
+          ];
 
     try {
       for (let turn = 1; turn <= maxTurns; turn += 1) {
@@ -177,6 +183,7 @@ export class ConversationRuntime {
               summary: result.finish.summary,
               changedFiles: result.finish.changed_files,
               nextSteps: result.finish.next_steps,
+              messages,
             });
             return { session, finish: result.finish, transcript, turns: turn, usage: sessionUsage };
           }

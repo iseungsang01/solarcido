@@ -58,6 +58,12 @@ solarcido sessions list
 solarcido sessions show <id>
 ```
 
+Continue a previous session (replays its saved transcript):
+
+```bash
+solarcido run "now also update the README" --resume <id>
+```
+
 ## Options
 
 - `--cwd`: working directory, default `process.cwd()`

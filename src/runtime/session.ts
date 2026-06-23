@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import type { ReasoningEffort } from "../api/client.js";
+import type { ChatMessage, ReasoningEffort } from "../api/client.js";
 import { getSolarcidoHome, type ApprovalPolicy, type SandboxMode } from "./config.js";
 
 export type SessionStatus = "running" | "completed" | "failed";
@@ -21,6 +21,8 @@ export type SessionRecord = {
   changedFiles: string[];
   nextSteps: string[];
   error?: string;
+  /** Full conversation transcript persisted for `--resume`. Present only on completed sessions. */
+  messages?: ChatMessage[];
 };
 
 export type CreateSessionOptions = {
@@ -59,7 +61,7 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
 
 export async function completeSession(
   session: SessionRecord,
-  update: { summary: string; changedFiles: string[]; nextSteps: string[] },
+  update: { summary: string; changedFiles: string[]; nextSteps: string[]; messages?: ChatMessage[] },
 ): Promise<SessionRecord> {
   const { error: _error, ...sessionWithoutError } = session;
   const record: SessionRecord = {
@@ -69,10 +71,28 @@ export async function completeSession(
     summary: update.summary,
     changedFiles: update.changedFiles,
     nextSteps: update.nextSteps,
+    // Only attach `messages` when provided, so records without a transcript
+    // round-trip identically (an explicit `messages: undefined` would not).
+    ...(update.messages ? { messages: update.messages } : {}),
   };
 
   await writeSession(record);
   return record;
+}
+
+/**
+ * Load a persisted session for `--resume`, throwing a clean error when the id
+ * is unknown.
+ */
+export async function loadSessionForResume(id: string): Promise<SessionRecord> {
+  try {
+    return await readSession(id);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      throw new Error(`No session found with id: ${id}`);
+    }
+    throw error;
+  }
 }
 
 export async function failSession(session: SessionRecord, error: string): Promise<SessionRecord> {

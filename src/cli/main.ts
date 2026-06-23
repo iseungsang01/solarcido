@@ -15,7 +15,7 @@ TypeScript CLI for the current repository.
 
 Usage:
   solarcido
-  solarcido run "your goal" [--cwd .] [--reasoning low|medium|high] [--model name] [--approval-policy on-failure|on-request|never] [--sandbox read-only|workspace-write] [--quiet]
+  solarcido run "your goal" [--cwd .] [--reasoning low|medium|high] [--model name] [--approval-policy on-failure|on-request|never] [--sandbox read-only|workspace-write] [--quiet] [--resume <id>]
   solarcido init [--cwd .]
   solarcido config get [key]
   solarcido config set <key> <value>
@@ -30,6 +30,7 @@ Options:
   --approval-policy <p>  never | on-failure | on-request
   --sandbox <mode>       read-only | workspace-write
   --quiet                suppress assistant chat messages
+  --resume <id>          continue a saved session (see: sessions list)
 
 Interactive shell:
 ${formatCliInteractiveHelp()}

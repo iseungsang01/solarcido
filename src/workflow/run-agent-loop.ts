@@ -1,9 +1,10 @@
 import path from "node:path";
 
-import { createApiClient, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from "../api/client.js";
+import { createApiClient, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type ChatMessage, type ReasoningEffort } from "../api/client.js";
 import { promptForCommandApproval } from "../approvals/prompt.js";
 import type { ApprovalPolicy, SandboxMode } from "../runtime/config.js";
 import { ConversationRuntime, createDefaultSessionStore } from "../runtime/conversation.js";
+import { loadSessionForResume } from "../runtime/session.js";
 import { PermissionEnforcer } from "../runtime/permission-enforcer.js";
 import { SystemPromptBuilder } from "../runtime/prompt.js";
 import { GlobalToolRegistry, type FinishPayload } from "../tools/registry.js";
@@ -23,6 +24,10 @@ export type RunWorkflowOptions = {
    * When true, suppress assistant status messages.
    */
   quiet?: boolean;
+  /**
+   * Resume a prior session by id, seeding its persisted transcript.
+   */
+  resume?: string;
 };
 
 /**
@@ -38,6 +43,15 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
 
   if (!options.quiet) {
     console.log(`\n[assistant] Working in ${cwd}`);
+  }
+
+  let resumeMessages: ChatMessage[] | undefined = undefined;
+  if (options.resume) {
+    const prior = await loadSessionForResume(options.resume);
+    resumeMessages = prior.messages;
+    if (!options.quiet) {
+      console.log(`[assistant] Resuming session ${prior.id} (${resumeMessages?.length ?? 0} messages)`);
+    }
   }
 
   const runtime = new ConversationRuntime({
@@ -59,6 +73,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     model: selectedModel,
     approvalPolicy,
     sandbox,
+    resumeMessages,
   });
 
   if (!options.quiet) {

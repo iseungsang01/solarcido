@@ -119,6 +119,10 @@ export async function dispatchSlashCommand(
       output.writeLine(formatInitReport(report));
       return "handled";
     }
+    case "resume":
+      output.writeLine('  Resume a saved session with: solarcido run "<goal>" --resume <id>');
+      output.writeLine("  List session ids with: solarcido sessions list");
+      return "handled";
     case "exit":
       return "exit";
     default:
