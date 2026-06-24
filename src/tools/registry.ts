@@ -91,6 +91,19 @@ export class GlobalToolRegistry {
       return { toolName: normalizedName, content: `ERROR: ${permissionDecision.reason}` };
     }
 
+    // While plan mode is active, only read-only tools (and exit_plan_mode) run;
+    // anything that ranks above read-only is blocked until a plan is applied.
+    if (
+      context.planMode?.active &&
+      normalizedName !== "exit_plan_mode" &&
+      !permissionAllows("read-only", registeredTool.spec.requiredPermission)
+    ) {
+      return {
+        toolName: normalizedName,
+        content: `ERROR: plan mode is active — call exit_plan_mode to apply the plan before running ${normalizedName}.`,
+      };
+    }
+
     if (!registeredTool.execute) {
       return { toolName: normalizedName, content: `ERROR: ${normalizedName} is registered without an executor.` };
     }

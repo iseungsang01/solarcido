@@ -86,6 +86,7 @@ class OpenAICompatibleClient implements ApiClient {
       response_format: options.responseFormat as OpenAI.Chat.Completions.ChatCompletionCreateParams["response_format"],
       reasoning_effort: options.reasoningEffort,
       temperature: options.temperature,
+      max_tokens: options.maxTokens,
     };
   }
 }

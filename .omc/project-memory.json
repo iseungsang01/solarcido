@@ -1,0 +1,493 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1782195079979,
+  "projectRoot": "C:\\Users\\lss\\Documents\\GitHub\\solarcido",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      },
+      {
+        "name": "Rust",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "Cargo.toml"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "cargo",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cd \"C:/Users/lss/Documents/GitHub/solarcido\" && npx tsc --noEmit -p tsconfig.json 2>&1 && echo \"TC OK\" && npm run build >/dev/null 2>&1 && echo \"BUILD OK\" && node tests/conversation.test.mjs 2>&1 | grep -E \"recovers from|tests [0-9]|pass [0-9]|fail [0-9]\"",
+    "testCommand": "cd \"C:/Users/lss/Documents/GitHub/solarcido\" && npm test 2>&1 | grep -iE \"fail [1-9][0-9]*|not ok|✖|AssertionError|Cannot find\" ; echo \"=== EXIT $? (1 = clean, no failures) ===\" ; npm test 2>&1 | grep -cE \"✔\"",
+    "lintCommand": "cargo clippy",
+    "devCommand": "npm run dev",
+    "scripts": {
+      "build": "npx tsc -p tsconfig.json",
+      "build:rust": "cargo build -p solarcido-cli",
+      "dev": "tsx src/index.ts",
+      "start": "node dist/index.js",
+      "test": "npm run build && node tests/cli.test.mjs && node tests/config.test.mjs && node tests/approvals.test.mjs && node tests/sessions.test.mjs && node tests/tools.test.mjs && node tests/execution-guard.test.mjs && node tests/conversation.test.mjs",
+      "typecheck": "npx tsc --noEmit -p tsconfig.json"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "bin",
+      "docs",
+      "scripts",
+      "src",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "bin": {
+      "path": "bin",
+      "purpose": "Executable scripts",
+      "fileCount": 1,
+      "lastAccessed": 1782195079936,
+      "keyFiles": [
+        "solarcido.js"
+      ]
+    },
+    "claw-rust": {
+      "path": "claw-rust",
+      "purpose": null,
+      "fileCount": 12,
+      "lastAccessed": 1782195079937,
+      "keyFiles": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "CLAUDE.md",
+        "MOCK_PARITY_HARNESS.md",
+        "mock_parity_scenarios.json"
+      ]
+    },
+    "crates": {
+      "path": "crates",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1782195079937,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 5,
+      "lastAccessed": 1782195079937,
+      "keyFiles": [
+        "MULTI_AGENT_ORCHESTRATION.md",
+        "ROADMAP.md",
+        "RUST_PARITY.md",
+        "RUST_PORT.md",
+        "SPEC.md"
+      ]
+    },
+    "docs-comparison": {
+      "path": "docs-comparison",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1782195079938,
+      "keyFiles": [
+        "planner.md",
+        "README.md",
+        "spec-summary.md"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 2,
+      "lastAccessed": 1782195079938,
+      "keyFiles": [
+        "run_mock_parity_diff.py",
+        "run_mock_parity_harness.sh"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 3,
+      "lastAccessed": 1782195079938,
+      "keyFiles": [
+        "cli.ts",
+        "index.ts",
+        "interactive.ts"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 7,
+      "lastAccessed": 1782195079939,
+      "keyFiles": [
+        "approvals.test.mjs",
+        "cli.test.mjs",
+        "config.test.mjs",
+        "conversation.test.mjs",
+        "execution-guard.test.mjs"
+      ]
+    },
+    "crates\\api": {
+      "path": "crates\\api",
+      "purpose": "API routes",
+      "fileCount": 1,
+      "lastAccessed": 1782195079940,
+      "keyFiles": [
+        "Cargo.toml"
+      ]
+    },
+    "src\\api": {
+      "path": "src\\api",
+      "purpose": "API routes",
+      "fileCount": 2,
+      "lastAccessed": 1782195079942,
+      "keyFiles": [
+        "client.ts",
+        "types.ts"
+      ]
+    },
+    "src\\config": {
+      "path": "src\\config",
+      "purpose": "Configuration files",
+      "fileCount": 2,
+      "lastAccessed": 1782195079942,
+      "keyFiles": [
+        "load-config.ts",
+        "schema.ts"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src\\runtime\\conversation.ts",
+      "accessCount": 76,
+      "lastAccessed": 1782279987499,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 43,
+      "lastAccessed": 1782278417758,
+      "type": "file"
+    },
+    {
+      "path": "src\\cli\\main.ts",
+      "accessCount": 30,
+      "lastAccessed": 1782272989639,
+      "type": "file"
+    },
+    {
+      "path": "src\\workflow\\run-agent-loop.ts",
+      "accessCount": 28,
+      "lastAccessed": 1782272488623,
+      "type": "file"
+    },
+    {
+      "path": "src\\tools\\executor.ts",
+      "accessCount": 15,
+      "lastAccessed": 1782272797393,
+      "type": "file"
+    },
+    {
+      "path": "src\\tools\\registry.ts",
+      "accessCount": 10,
+      "lastAccessed": 1782272786001,
+      "type": "file"
+    },
+    {
+      "path": "src\\runtime\\prompt.ts",
+      "accessCount": 10,
+      "lastAccessed": 1782274412190,
+      "type": "file"
+    },
+    {
+      "path": "src\\cli\\repl.ts",
+      "accessCount": 7,
+      "lastAccessed": 1782272070938,
+      "type": "file"
+    },
+    {
+      "path": "src\\tools\\specs.ts",
+      "accessCount": 7,
+      "lastAccessed": 1782272790520,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\git_context.rs",
+      "accessCount": 5,
+      "lastAccessed": 1782201140119,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\bash_validation.rs",
+      "accessCount": 5,
+      "lastAccessed": 1782273198782,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 4,
+      "lastAccessed": 1782196081750,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\compact.rs",
+      "accessCount": 4,
+      "lastAccessed": 1782201112970,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\api\\src\\providers\\mod.rs",
+      "accessCount": 4,
+      "lastAccessed": 1782209149166,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\api\\src\\providers\\openai_compat.rs",
+      "accessCount": 4,
+      "lastAccessed": 1782271425182,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\prompt.rs",
+      "accessCount": 4,
+      "lastAccessed": 1782271459687,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\mcp_server.rs",
+      "accessCount": 4,
+      "lastAccessed": 1782272780706,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\api\\src\\error.rs",
+      "accessCount": 3,
+      "lastAccessed": 1782200817015,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\config_validate.rs",
+      "accessCount": 3,
+      "lastAccessed": 1782201100126,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\branch_lock.rs",
+      "accessCount": 3,
+      "lastAccessed": 1782208149522,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\api\\src\\sse.rs",
+      "accessCount": 3,
+      "lastAccessed": 1782271379181,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\api\\src\\providers\\anthropic.rs",
+      "accessCount": 3,
+      "lastAccessed": 1782271379243,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src",
+      "accessCount": 3,
+      "lastAccessed": 1782272080265,
+      "type": "directory"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\config.rs",
+      "accessCount": 3,
+      "lastAccessed": 1782272082897,
+      "type": "file"
+    },
+    {
+      "path": "src\\agents\\execution-guard.ts",
+      "accessCount": 3,
+      "lastAccessed": 1782272350999,
+      "type": "file"
+    },
+    {
+      "path": "src\\runtime\\permission-enforcer.ts",
+      "accessCount": 3,
+      "lastAccessed": 1782272978942,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\policy_engine.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782208169612,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\green_contract.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782208184310,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\recovery_recipes.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782208184814,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\bootstrap.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782208669621,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\api\\src\\prompt_cache.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782208689074,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\hooks.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782208712052,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\api\\src\\http_client.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782209148827,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\mcp.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782209187548,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\mcp_lifecycle_hardened.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782209195997,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\mcp_client.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782209196327,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\sandbox.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782209209464,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\remote.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782209209635,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\oauth.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782271379196,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\permissions.rs",
+      "accessCount": 2,
+      "lastAccessed": 1782271425921,
+      "type": "file"
+    },
+    {
+      "path": "src\\tools\\filesystem.ts",
+      "accessCount": 1,
+      "lastAccessed": 1782196023694,
+      "type": "file"
+    },
+    {
+      "path": "src\\tools\\process.ts",
+      "accessCount": 1,
+      "lastAccessed": 1782196024151,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1782197238160,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\bash.rs",
+      "accessCount": 1,
+      "lastAccessed": 1782197240605,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\conversation.rs",
+      "accessCount": 1,
+      "lastAccessed": 1782197249842,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\file_ops.rs",
+      "accessCount": 1,
+      "lastAccessed": 1782197250040,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\api\\src\\lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1782197252830,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\api\\src\\types.rs",
+      "accessCount": 1,
+      "lastAccessed": 1782197253065,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\api\\src\\client.rs",
+      "accessCount": 1,
+      "lastAccessed": 1782197253522,
+      "type": "file"
+    },
+    {
+      "path": "claw-rust\\crates\\runtime\\src\\permission_enforcer.rs",
+      "accessCount": 1,
+      "lastAccessed": 1782197261422,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

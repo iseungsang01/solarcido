@@ -60,8 +60,18 @@ solarcido team <tasks.json> [--concurrency N]
 solarcido orchestrate "<goal>"
 solarcido cron <cron.json>
 solarcido lsp <file> [--server "<command>"]
+solarcido mcp-serve [--cwd .]
 solarcido --help
 ```
+
+`solarcido mcp-serve` exposes Solarcido's builtin tools over MCP so an external
+MCP client (e.g. Claude Desktop) can drive them (owner:
+`src/workflow/mcp-serve-command.ts` + `src/runtime/mcp/server.ts`; input:
+optional `--cwd`, `--approval-policy`, `--sandbox`; it speaks Content-Length
+JSON-RPC on stdin/stdout, answering `initialize`, `tools/list` — derived from
+the tool registry — and `tools/call`, which routes through the registry's
+`execute()`; verification: `tests/mcp-server.test.mjs`). This is the server
+counterpart to the MCP *client* in `src/runtime/mcp/client.ts`.
 
 `solarcido lsp` opens a file in a language server and prints its diagnostics
 (owner: `src/workflow/lsp-command.ts` + `src/runtime/lsp/client.ts`; input: a
@@ -220,6 +230,10 @@ search_files
 write_file
 edit_file
 run_command
+ask_user_question
+enter_plan_mode
+exit_plan_mode
+todo_write
 finish
 ```
 
@@ -231,6 +245,10 @@ Tool behavior requirements:
 - `edit_file` uses exact string replacement and rejects ambiguous replacements unless `replace_all` is explicit.
 - `write_file` is for new files or intentional full-file replacement.
 - `run_command` returns `exit_code`, `stdout`, and `stderr`.
+- `ask_user_question` prompts the human (optionally multiple-choice) and returns an `unanswered` status with no terminal — it never hangs non-interactive runs.
+- `enter_plan_mode` turns on plan mode, after which the registry blocks any tool ranking above `read-only` until a plan is applied.
+- `exit_plan_mode` presents the proposed plan for approval and leaves plan mode (auto-approving when there is no terminal).
+- `todo_write` persists the validated todo list (to `.solarcido-todos.json` or `SOLARCIDO_TODO_STORE`), clearing it when every item is completed.
 - `finish` returns summary, changed files, and next steps.
 
 ## Agent Loop
@@ -283,7 +301,9 @@ The orchestrator must not:
 
 ## MCP Roadmap
 
-MCP support is a future extension, not current behavior.
+MCP client consumption and a builtin-tool MCP *server* (`solarcido mcp-serve`,
+owner `src/runtime/mcp/server.ts`) both exist today. The items below describe
+the remaining client-config work, not current behavior.
 
 Target shape:
 

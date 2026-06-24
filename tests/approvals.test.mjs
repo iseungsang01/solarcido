@@ -105,7 +105,7 @@ test("createToolDefinitions filters tools by maximum permission", () => {
   const readOnlyNames = createToolDefinitions({ maxPermission: "read-only" }).map((tool) => tool.function.name);
   const workspaceNames = createToolDefinitions({ maxPermission: "workspace-write" }).map((tool) => tool.function.name);
 
-  assert.deepEqual(readOnlyNames, ["list_files", "read_file", "search_files", "finish"]);
+  assert.deepEqual(readOnlyNames, ["list_files", "read_file", "search_files", "ask_user_question", "enter_plan_mode", "exit_plan_mode", "todo_write", "finish"]);
   assert.equal(workspaceNames.includes("write_file"), true);
   assert.equal(workspaceNames.includes("edit_file"), true);
   assert.equal(workspaceNames.includes("run_command"), true);
@@ -196,7 +196,7 @@ test("verifier exposes and enforces read-only tools only", async () => {
       root,
     );
 
-    assert.deepEqual(toolNamesByCall[0], ["list_files", "read_file", "search_files", "finish"]);
+    assert.deepEqual(toolNamesByCall[0], ["list_files", "read_file", "search_files", "ask_user_question", "enter_plan_mode", "exit_plan_mode", "todo_write", "finish"]);
     assert.equal(toolResults[0], "ERROR: edit_file is disabled in read-only sandbox mode.");
     assert.equal(result.summary, "verified");
   });

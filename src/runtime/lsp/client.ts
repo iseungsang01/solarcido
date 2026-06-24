@@ -230,7 +230,7 @@ export class LspClientSession {
   private onPublishDiagnostics(params: PublishDiagnosticsParams | undefined): void {
     if (!params || typeof params.uri !== "string") return;
     const mapped = (params.diagnostics ?? []).map((d) => this.mapDiagnostic(params.uri, d));
-    this.diagnosticsByUri.set(params.uri, mapped);
+    this.diagnosticsByUri.set(canonicalUriKey(params.uri), mapped);
   }
 
   private mapDiagnostic(uri: string, d: LspWireDiagnostic): LspDiagnostic {
@@ -381,7 +381,7 @@ export class LspClientSession {
    * read this after giving the server a chance to emit publishDiagnostics.
    */
   diagnostics(uri: string): LspDiagnostic[] {
-    return (this.diagnosticsByUri.get(uri) ?? []).map((d) => ({ ...d }));
+    return (this.diagnosticsByUri.get(canonicalUriKey(uri)) ?? []).map((d) => ({ ...d }));
   }
 
   /**
@@ -535,6 +535,14 @@ export function uriToPath(uri: string): string {
   return decoded;
 }
 
+/** Canonical comparison key for a document URI: decoded, forward-slashed, and
+ * drive-lowercased. Collapses encoding/case variants (file:///C%3A/x vs
+ * file:///c:/x) so server-published diagnostics match the URI we opened. */
+function canonicalUriKey(uri: string): string {
+  const p = uriToPath(uri).replace(/\\/g, "/");
+  return /^[A-Za-z]:/.test(p) ? p[0].toLowerCase() + p.slice(1) : p;
+}
+
 // ---------------------------------------------------------------------------
 // Default stdio transport (NOT exercised by tests)
 // ---------------------------------------------------------------------------
@@ -550,6 +558,7 @@ class LspStdioTransport implements LspTransport {
   private buffer = Buffer.alloc(0);
   private handler: ((message: LspInboundMessage) => void) | undefined;
   private closed = false;
+  private spawnError: Error | undefined;
 
   constructor(descriptor: LspTransportDescriptor) {
     this.child = spawn(descriptor.command, descriptor.args ?? [], {
@@ -559,6 +568,19 @@ class LspStdioTransport implements LspTransport {
       windowsHide: true,
     });
     this.child.stdout?.on("data", (chunk: Buffer) => this.onChunk(chunk));
+    // Without an 'error' listener a failed spawn (e.g. ENOENT for a missing
+    // language-server binary) is emitted as an UNCAUGHT exception that crashes
+    // the process. Capture it so the next send() rejects with a clean message
+    // and the session can shut down gracefully instead.
+    this.child.on("error", (error: Error) => {
+      this.spawnError = error;
+      this.closed = true;
+    });
+    // If the server dies unexpectedly, fail fast on later sends rather than
+    // waiting out the per-request timeout.
+    this.child.on("exit", () => {
+      this.closed = true;
+    });
   }
 
   private onChunk(chunk: Buffer): void {
@@ -573,7 +595,13 @@ class LspStdioTransport implements LspTransport {
   }
 
   async send(message: JsonRpcRequest<unknown> | JsonRpcNotification<unknown>): Promise<void> {
-    if (this.closed) throw new Error("LSP stdio transport is closed");
+    if (this.closed) {
+      throw new Error(
+        this.spawnError
+          ? `LSP server failed to start: ${this.spawnError.message}`
+          : "LSP stdio transport is closed",
+      );
+    }
     const frame = encodeContentLengthFrame(message);
     await new Promise<void>((resolve, reject) => {
       this.child.stdin?.write(frame, (error) => (error ? reject(error) : resolve()));

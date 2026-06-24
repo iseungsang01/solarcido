@@ -14,12 +14,27 @@ export type ToolExecutionResult = {
   finish?: FinishPayload;
 };
 
+export type InteractionHandler = {
+  /** Free-text prompt. Returns the user's line. */
+  askText(prompt: string): Promise<string>;
+  /** Yes/No. Returns true on yes. */
+  askYesNo(question: string): Promise<boolean>;
+  /** Numbered choice from options. Returns the chosen value (or raw text if the user typed something else). */
+  askChoice(question: string, options: string[]): Promise<string>;
+};
+
+export type PlanModeState = { active: boolean };
+
 export type ToolExecutionContext = {
   root: string;
   approvalPolicy: ApprovalPolicy;
   sandbox: SandboxMode;
   maxPermission?: PermissionMode;
   permissionEnforcer?: PermissionEnforcer;
+  /** Optional TTY-backed prompt seam; absent in non-interactive runs. */
+  interaction?: InteractionHandler;
+  /** Optional conversation-wide plan-mode flag; absent when unsupported. */
+  planMode?: PlanModeState;
 };
 
 export type ToolSpec = {

@@ -111,6 +111,37 @@ test("validateCommand default: shred ./secrets.txt → warn (inherently destruct
   assert.ok("message" in result && result.message.includes("shred"));
 });
 
+test("validateCommand default: mkfs.ext4 /dev/sda → warn (filesystem creation)", () => {
+  // `mkfs.ext4` is the common invocation form; the "mkfs" substring pattern
+  // catches it even though the first token is not bare `mkfs`.
+  const result = validateCommand("mkfs.ext4 /dev/sda", { readOnly: false });
+  assert.equal(result.decision, "warn");
+  assert.ok("message" in result && result.message.toLowerCase().includes("filesystem"));
+});
+
+test("validateCommand default: dd if=/dev/zero of=./disk.img → warn (direct disk write)", () => {
+  // Genuinely non-system paths so the system-path guard does not fire (note
+  // `/dev/zero` WOULD trip it via the "/dev/" match); the `dd if=` destructive
+  // pattern must catch this on its own.
+  const result = validateCommand("dd if=./src.img of=./dst.img bs=1M", { readOnly: false });
+  assert.equal(result.decision, "warn");
+  assert.ok("message" in result && result.message.toLowerCase().includes("disk write"));
+});
+
+test("validateCommand default: chmod -R 777 ./app → warn (world-writable)", () => {
+  // Non-system path so the system-path guard does not fire; the chmod -R 777
+  // destructive pattern must catch it on its own.
+  const result = validateCommand("chmod -R 777 ./app", { readOnly: false });
+  assert.equal(result.decision, "warn");
+  assert.ok("message" in result && result.message.toLowerCase().includes("world-writable"));
+});
+
+test("validateCommand default: chmod -R 000 ./app → warn (removing permissions)", () => {
+  const result = validateCommand("chmod -R 000 ./app", { readOnly: false });
+  assert.equal(result.decision, "warn");
+  assert.ok("message" in result && result.message.toLowerCase().includes("permission"));
+});
+
 test("validateCommand default: git status → allow", () => {
   const result = validateCommand("git status", { readOnly: false });
   assert.equal(result.decision, "allow");

@@ -11,6 +11,7 @@ import { formatOrchestrationResult, orchestrateGoal } from "../workflow/orchestr
 import { createApiClientForModel } from "../api/client.js";
 import { loadCronJobs, runCronDaemon } from "../workflow/cron-daemon.js";
 import { runLspDiagnosticsCommand } from "../workflow/lsp-command.js";
+import { runMcpServeCommand } from "../workflow/mcp-serve-command.js";
 
 export function printHelp(): void {
   console.log(`
@@ -26,6 +27,7 @@ Usage:
   solarcido orchestrate "your goal" [--cwd .] [--model name] [--sandbox ...]
   solarcido cron <cron.json> [--cwd .] [--model name] [--sandbox ...]
   solarcido lsp <file> [--server "<command>"] [--settle-ms N]
+  solarcido mcp-serve [--cwd .] [--approval-policy ...] [--sandbox ...]
   solarcido config get [key]
   solarcido config set <key> <value>
   solarcido config path
@@ -120,6 +122,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         settleMs: command.settleMs,
       });
       console.log(output);
+      return;
+    }
+    case "mcp-serve": {
+      await runMcpServeCommand({
+        cwd: command.cwd,
+        approvalPolicy: command.approvalPolicy,
+        sandbox: command.sandbox,
+      });
       return;
     }
   }

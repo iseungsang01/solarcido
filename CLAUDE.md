@@ -20,10 +20,12 @@ npm run dev          # run from source via tsx (no build) — fastest dev loop
 npm run typecheck    # tsc --noEmit; run after any TS change
 npm run build        # tsc -> dist/ (required before `npm start`, the bin, or tests)
 npm start            # node dist/index.js
-npm test             # builds, then runs every tests/*.test.mjs against dist/
+npm test             # builds, then runs an explicit list of tests/*.test.mjs against dist/
 ```
 
-Tests are `node:test` files in `tests/` that **import from `dist/`, not `src/`** — so they require a build first. `npm test` builds automatically. To run a single file or filter by name, build first, then:
+There is **no TypeScript linter** — `npm run typecheck` (`tsc --noEmit`) is the only static gate. (`cargo clippy` lints the Rust port only.)
+
+Tests are `node:test` files in `tests/` that **import from `dist/`, not `src/`** — so they require a build first. `npm test` runs a **hard-coded, ordered list** of files (`cli`, `config`, `approvals`, `sessions`, `tools`, `execution-guard`, `conversation`), *not* a glob — so **a new `tests/*.test.mjs` file is silently skipped until you add it to the `test` script in `package.json`**. To run a single file or filter by name, build first, then:
 
 ```bash
 npm run build
@@ -52,7 +54,7 @@ The actual agent loop is **`ConversationRuntime.runTurn` in `src/runtime/convers
 **Execution guard** (`src/agents/execution-guard.ts`) is a key cross-cutting rule: if the goal looks like it requires changes (keyword heuristic, including Korean keywords), a `finish` call is *rejected* with an error until an `edit_file`/`write_file` has actually succeeded. This stops the model from "finishing" with only a plan. Keep this behavior in mind when changing the loop.
 
 Tools:
-- Specs + dispatch logic live in `src/tools/executor.ts` (`BUILTIN_TOOL_SPECS`, `executeBuiltinTool`). Tools: `list_files`, `read_file`, `search_files`, `write_file`, `edit_file`, `run_command`, `finish`.
+- Tool JSON schemas + dispatch logic live in `src/tools/executor.ts` (`BUILTIN_TOOL_SPECS`, `executeBuiltinTool`); shared TypeScript types (`ToolSpec`, `ToolExecutionResult`, `ToolExecutionContext`, `FinishPayload`) live in `src/tools/specs.ts`. Tools: `list_files`, `read_file`, `search_files`, `write_file`, `edit_file`, `run_command`, `finish`.
 - `src/tools/registry.ts` (`GlobalToolRegistry`) registers tools, filters them by permission, and dispatches by name. It **normalizes/aliases** tool names (`bash`→`run_command`, `glob_search`→`list_files`, `grep_search`→`search_files`, hyphens→underscores) so the model can use familiar names.
 - Implementations: `src/runtime/file-ops.ts` (list/read/search/write/edit) and `src/runtime/bash.ts` (commands). File ops are all sandboxed to the working dir via `resolveInsideRoot` (path.resolve + path.relative check) — paths that escape throw.
 
@@ -73,7 +75,7 @@ Interactive shell:
 ## Things that will trip you up
 
 - **AGENTS.md is partly stale on paths.** It predates a refactor (branch `refactor/claw-rust-ts-structure`). Its *rules* still apply, but where it says `src/solar/` read `src/api/`, and the agent loop is now `ConversationRuntime` in `src/runtime/conversation.ts`, not a flat `run-agent-loop.ts` implementation. Trust the actual tree over AGENTS.md's file list.
-- **Compatibility shims exist.** `src/cli.ts`, `src/interactive.ts`, `src/solar/*`, `src/sessions/*`, and `src/approvals/classify-command.ts` are 1–6 line re-exports pointing at the canonical modules (`src/cli/`, `src/api/`, `src/runtime/`). Edit the canonical module, not the shim.
+- **Compatibility shims exist.** `src/cli.ts`, `src/interactive.ts`, `src/solar/*`, `src/sessions/*`, `src/approvals/classify-command.ts`, and `src/tools/{filesystem,process}.ts` are 1–6 line re-exports pointing at the canonical modules (`src/cli/`, `src/api/`, `src/runtime/`). Edit the canonical module, not the shim. (`src/tools/filesystem.ts` → `src/runtime/file-ops.ts`; `src/tools/process.ts` → `src/runtime/bash.ts`.)
 - **The multi-agent orchestration is dormant.** `src/workflow/orchestrator.ts` (`orchestrateGoal`) plus `src/agents/{planner,explorer,executor,verifier,reviewer}.ts` and the generic `src/workflow/agent-loop.ts` implement a planner→executor→reviewer pipeline, but `orchestrateGoal` is **not called anywhere** — the CLI always uses the single `ConversationRuntime` loop. Don't assume these agents run in the normal flow.
 - **`dist/` is generated** and git-ignored; never edit it. Change `src/` and rebuild.
 

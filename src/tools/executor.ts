@@ -1,8 +1,15 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
 import { promptForCommandApproval } from "../approvals/prompt.js";
 import { PermissionEnforcer } from "../runtime/permission-enforcer.js";
 import { runCommand } from "../runtime/bash.js";
 import { editFile, listFiles, readFile, searchFiles, writeFile } from "../runtime/file-ops.js";
 import type { BuiltinTool, ToolExecutionContext, ToolExecutionResult, ToolSpec } from "./specs.js";
+
+type TodoStatus = "pending" | "in_progress" | "completed";
+type TodoItem = { content: string; activeForm: string; status: TodoStatus };
+const TODO_STATUSES: TodoStatus[] = ["pending", "in_progress", "completed"];
 
 export const BUILTIN_TOOL_SPECS: ToolSpec[] = [
   {
@@ -96,6 +103,77 @@ export const BUILTIN_TOOL_SPECS: ToolSpec[] = [
         timeout_ms: { type: "integer" },
       },
       required: ["command"],
+    },
+  },
+  {
+    name: "ask_user_question",
+    description:
+      "Ask the human a question and wait for their answer. Provide `options` for a multiple-choice prompt. Returns an unanswered status when there is no interactive terminal.",
+    requiredPermission: "read-only",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        question: { type: "string" },
+        options: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional choices to present as a numbered list.",
+        },
+      },
+      required: ["question"],
+    },
+  },
+  {
+    name: "enter_plan_mode",
+    description:
+      "Enter plan mode: write/edit/run tools are blocked until exit_plan_mode applies a plan. Use while researching before making changes.",
+    requiredPermission: "read-only",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "exit_plan_mode",
+    description:
+      "Present the proposed plan for approval and leave plan mode. On approval, edits are re-enabled; without a terminal the plan is auto-approved.",
+    requiredPermission: "read-only",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        plan: { type: "string" },
+      },
+      required: ["plan"],
+    },
+  },
+  {
+    name: "todo_write",
+    description:
+      "Record the task todo list. Each item needs `content`, `activeForm`, and a status of pending|in_progress|completed. Submitting an all-completed list clears the store.",
+    requiredPermission: "read-only",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        todos: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              content: { type: "string" },
+              activeForm: { type: "string" },
+              status: { type: "string", enum: ["pending", "in_progress", "completed"] },
+            },
+            required: ["content", "activeForm", "status"],
+          },
+        },
+      },
+      required: ["todos"],
     },
   },
   {
@@ -196,6 +274,127 @@ export async function executeBuiltinTool(
       );
       return { toolName: name, content: result.output };
     }
+    case "ask_user_question": {
+      const question = requireString(args.question, "question");
+      const options = arrayOfStrings(args.options);
+
+      if (!context.interaction) {
+        return {
+          toolName: name,
+          content: prettyJson({
+            question,
+            answer: null,
+            status: "unanswered",
+            reason: "no interactive terminal",
+          }),
+        };
+      }
+
+      const answer = options.length > 0
+        ? await context.interaction.askChoice(question, options)
+        : await context.interaction.askText(question);
+      return {
+        toolName: name,
+        content: prettyJson({ question, answer, status: "answered" }),
+      };
+    }
+    case "enter_plan_mode": {
+      if (!context.planMode) {
+        return {
+          toolName: name,
+          content: prettyJson({
+            active: false,
+            changed: false,
+            message: "Plan mode unavailable in this context.",
+          }),
+        };
+      }
+
+      const wasActive = context.planMode.active;
+      context.planMode.active = true;
+      return {
+        toolName: name,
+        content: prettyJson({
+          active: true,
+          changed: !wasActive,
+          message: "Plan mode on: edits are blocked until exit_plan_mode.",
+        }),
+      };
+    }
+    case "exit_plan_mode": {
+      const plan = requireString(args.plan, "plan");
+
+      if (!context.planMode?.active) {
+        return {
+          toolName: name,
+          content: prettyJson({
+            active: false,
+            approved: true,
+            changed: false,
+            message: "Not in plan mode.",
+          }),
+        };
+      }
+
+      if (!context.interaction) {
+        context.planMode.active = false;
+        return {
+          toolName: name,
+          content: prettyJson({
+            active: false,
+            approved: true,
+            changed: true,
+            autoApproved: true,
+            message: "No TTY; plan auto-approved.",
+          }),
+        };
+      }
+
+      const ok = await context.interaction.askYesNo(`Proceed with this plan?\n\n${plan}`);
+      if (ok) {
+        context.planMode.active = false;
+        return {
+          toolName: name,
+          content: prettyJson({
+            active: false,
+            approved: true,
+            changed: true,
+            message: "Plan approved; edits enabled.",
+          }),
+        };
+      }
+
+      return {
+        toolName: name,
+        content: prettyJson({
+          active: true,
+          approved: false,
+          changed: false,
+          message: "Plan rejected; still in plan mode.",
+        }),
+      };
+    }
+    case "todo_write": {
+      const todos = parseTodos(args.todos);
+      if (typeof todos === "string") {
+        return { toolName: name, content: todos };
+      }
+
+      const storePath = todoStorePath(context.root);
+      const oldTodos = readTodoStore(storePath);
+      const allCompleted = todos.every((todo) => todo.status === "completed");
+      const newTodos = allCompleted ? [] : todos;
+      writeTodoStore(storePath, newTodos);
+
+      const verificationNudgeNeeded =
+        allCompleted && todos.length >= 3 && !todos.some((todo) => /verif/i.test(todo.content))
+          ? true
+          : undefined;
+      return {
+        toolName: name,
+        content: prettyJson({ oldTodos, newTodos, verificationNudgeNeeded }),
+      };
+    }
     case "finish": {
       const summary = requireString(args.summary, "summary");
       return {
@@ -236,4 +435,63 @@ function getPermissionEnforcer(context: ToolExecutionContext): PermissionEnforce
     maxPermission: context.maxPermission,
     approveCommand: promptForCommandApproval,
   });
+}
+
+function prettyJson(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+/**
+ * Validate the `todos` argument. Returns the parsed list, or an `ERROR: ...`
+ * string describing the first violation (so the loop can continue).
+ */
+function parseTodos(value: unknown): TodoItem[] | string {
+  if (!Array.isArray(value) || value.length === 0) {
+    return "ERROR: todos must be a non-empty array.";
+  }
+
+  const todos: TodoItem[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return `ERROR: todos[${index}] must be an object.`;
+    }
+
+    const { content, activeForm, status } = item as Record<string, unknown>;
+    if (typeof content !== "string" || content.length === 0) {
+      return `ERROR: todos[${index}].content must be a non-empty string.`;
+    }
+    if (typeof activeForm !== "string" || activeForm.length === 0) {
+      return `ERROR: todos[${index}].activeForm must be a non-empty string.`;
+    }
+    if (typeof status !== "string" || !TODO_STATUSES.includes(status as TodoStatus)) {
+      return `ERROR: todos[${index}].status must be one of ${TODO_STATUSES.join(", ")}.`;
+    }
+
+    todos.push({ content, activeForm, status: status as TodoStatus });
+  }
+
+  return todos;
+}
+
+function todoStorePath(root: string): string {
+  return process.env.SOLARCIDO_TODO_STORE || path.join(root, ".solarcido-todos.json");
+}
+
+function readTodoStore(storePath: string): TodoItem[] {
+  if (!existsSync(storePath)) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(storePath, "utf8"));
+    return Array.isArray(parsed) ? parsed as TodoItem[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeTodoStore(storePath: string, todos: TodoItem[]): void {
+  mkdirSync(path.dirname(storePath), { recursive: true });
+  writeFileSync(storePath, `${JSON.stringify(todos, null, 2)}\n`, "utf8");
 }

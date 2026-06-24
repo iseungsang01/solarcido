@@ -1,6 +1,8 @@
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
+import { clampText, MAX_COMMAND_STREAM_CHARS } from "./output-limits.js";
+
 const execAsync = promisify(exec);
 
 type ExecFailure = Error & {
@@ -14,12 +16,14 @@ type ExecFailure = Error & {
 export function formatCommandOutput(stdout = "", stderr = "", exitCode: number | string = 0): string {
   const sections: string[] = [`exit_code: ${exitCode}`];
 
-  if (stdout.trim()) {
-    sections.push(`stdout:\n${stdout.trim()}`);
+  const out = stdout.trim();
+  if (out) {
+    sections.push(`stdout:\n${clampText(out, MAX_COMMAND_STREAM_CHARS, "head-tail", "re-run with a narrower command")}`);
   }
 
-  if (stderr.trim()) {
-    sections.push(`stderr:\n${stderr.trim()}`);
+  const err = stderr.trim();
+  if (err) {
+    sections.push(`stderr:\n${clampText(err, MAX_COMMAND_STREAM_CHARS, "head-tail", "re-run with a narrower command")}`);
   }
 
   return sections.join("\n\n");

@@ -4,6 +4,7 @@ import { createApiClientForModel, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, type 
 import { promptForCommandApproval } from "../approvals/prompt.js";
 import type { ApprovalPolicy, SandboxMode } from "../runtime/config.js";
 import { ConversationRuntime, createDefaultSessionStore, type TurnSummary } from "../runtime/conversation.js";
+import { createReaderInteraction } from "../runtime/interaction.js";
 import { loadSessionForResume } from "../runtime/session.js";
 import { buildMcpManager, loadMcpServers } from "../runtime/mcp/config.js";
 import { mcpToolsAsRuntimeTools } from "../tools/mcp-tools.js";
@@ -102,6 +103,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<TurnSumm
     }),
     promptBuilder: new SystemPromptBuilder(),
     hookRunner: new HookRunner(hookConfig),
+    createInteractionHandler: createReaderInteraction,
   });
 
   const stream = options.stream === true;

@@ -78,6 +78,12 @@ export type CliCommand =
     }
   | { mode: "init"; cwd: string }
   | { mode: "lsp"; file: string; server?: string; settleMs?: number }
+  | {
+      mode: "mcp-serve";
+      cwd: string;
+      approvalPolicy: ApprovalPolicy;
+      sandbox: SandboxMode;
+    }
   | { mode: "help" };
 
 function parseReasoningEffort(value: string | undefined): ReasoningEffort {
@@ -193,6 +199,40 @@ export function parseCliArgs(argv: string[], defaults: CliDefaults = BUILT_IN_DE
       throw new Error('Usage: solarcido lsp <file> [--server "<command>"] [--settle-ms N]');
     }
     return { mode: "lsp", file: path.resolve(file), server, settleMs };
+  }
+
+  if (mode === "mcp-serve") {
+    let cwd = process.cwd();
+    let approvalPolicy = defaults.approvalPolicy;
+    let sandbox = defaults.sandbox;
+    for (let index = 0; index < rest.length; index += 1) {
+      const token = rest[index];
+      if (token === "--cwd") {
+        cwd = path.resolve(rest[index + 1] ?? process.cwd());
+        index += 1;
+        continue;
+      }
+      if (token === "--approval-policy") {
+        const value = rest[index + 1];
+        if (value !== "never" && value !== "on-failure" && value !== "on-request") {
+          throw new Error("--approval-policy must be never, on-failure, or on-request.");
+        }
+        approvalPolicy = value;
+        index += 1;
+        continue;
+      }
+      if (token === "--sandbox") {
+        const value = rest[index + 1];
+        if (value !== "read-only" && value !== "workspace-write") {
+          throw new Error("--sandbox must be read-only or workspace-write.");
+        }
+        sandbox = value;
+        index += 1;
+        continue;
+      }
+      throw new Error(`Unknown flag for mcp-serve: ${token}`);
+    }
+    return { mode: "mcp-serve", cwd, approvalPolicy, sandbox };
   }
 
   if (mode !== "run" && mode !== "team" && mode !== "orchestrate" && mode !== "cron") {

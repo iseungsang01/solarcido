@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
   collectDiagnostics,
   formatDiagnostics,
   defaultServerForFile,
+  findProjectRoot,
   languageIdForFile,
   pathToFileUri,
   parseServerCommand,
@@ -55,6 +59,34 @@ test("collectDiagnostics drives initialize -> didOpen -> diagnostics -> shutdown
   const diags = await collectDiagnostics(session, "x.ts", "const a = 1", { settleMs: 0 });
   assert.deepEqual(diags, [diag]);
   assert.deepEqual(calls.map((c) => c[0]), ["init", "open", "shutdown"]);
+});
+
+test("collectDiagnostics tears down the session even when initialize rejects", async () => {
+  const calls = [];
+  const session = {
+    async initialize() {
+      throw new Error("init failed");
+    },
+    async didOpen() {
+      calls.push(["open"]);
+    },
+    diagnostics() {
+      return [];
+    },
+    async shutdown() {
+      calls.push(["shutdown"]);
+    },
+  };
+  await assert.rejects(collectDiagnostics(session, "x.ts", "code", { settleMs: 0 }));
+  assert.ok(calls.some((c) => c[0] === "shutdown"), "shutdown should still run after an init failure");
+});
+
+test("findProjectRoot walks up to a directory containing a marker", () => {
+  // This test file lives under <repo>/tests; the repo root holds package.json.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const root = findProjectRoot(path.join(here, "somefile.ts"));
+  assert.equal(typeof root, "string");
+  assert.ok(existsSync(path.join(root, "package.json")), "resolved root should contain package.json");
 });
 
 test("formatDiagnostics renders 1-based positions or a clean empty message", () => {

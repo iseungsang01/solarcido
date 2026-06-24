@@ -9,10 +9,12 @@ import { classifyApiError, formatClassifiedError } from "../api/errors.js";
 import { detectAndRenderGitContext } from "./git-context.js";
 import { addUsage, emptyUsage, normalizeUsage, type TokenUsage } from "./usage.js";
 import { formatCompactSummary } from "./compaction.js";
+import { compressSummary } from "./summary-compression.js";
 import { HookRunner } from "./hooks.js";
 import { GlobalToolRegistry } from "../tools/registry.js";
-import type { FinishPayload, ToolExecutionResult } from "../tools/specs.js";
-import { estimateTranscriptTokens } from "../workflow/context-budget.js";
+import type { FinishPayload, InteractionHandler, PlanModeState, ToolExecutionResult } from "../tools/specs.js";
+import { estimateMessagesTokens, estimateTokens } from "../workflow/context-budget.js";
+import { maxTokensForModel, modelTokenLimit } from "../api/provider-registry.js";
 import type { ApprovalPolicy, SandboxMode } from "./config.js";
 import { PermissionEnforcer } from "./permission-enforcer.js";
 import { SystemPromptBuilder } from "./prompt.js";
@@ -62,6 +64,11 @@ export type ConversationRuntimeOptions = {
   promptBuilder: SystemPromptBuilder;
   maxTranscriptTokens?: number;
   /**
+   * How many trailing messages compaction preserves verbatim. Defaults to 12.
+   * Set to 0 to summarize everything below the head (maximum compression).
+   */
+  compactionRecentMessages?: number;
+  /**
    * Resolves rendered git context for a working directory. Injectable so tests
    * stay hermetic (no real `git` subprocess); defaults to live git detection.
    */
@@ -71,10 +78,25 @@ export type ConversationRuntimeOptions = {
    * no-op runner (no configured hooks), so tool execution is unchanged.
    */
   hookRunner?: HookRunner;
+  /**
+   * Builds the per-call interaction handler used by prompting tools
+   * (ask_user_question, exit_plan_mode). Returns `undefined` in non-interactive
+   * runs so those tools degrade gracefully. Defaults to no handler.
+   */
+  createInteractionHandler?: () => InteractionHandler | undefined;
 };
 
 const DEFAULT_MAX_TURNS = 20;
-const DEFAULT_MAX_TRANSCRIPT_TOKENS = 90 * 131_072 / 100;
+/**
+ * Tokens reserved inside the (shared input+output) context window for the
+ * model's own reply, including reasoning tokens. The transcript budget is the
+ * model's context window minus this reserve, so a full transcript still leaves
+ * room to answer instead of erroring with a context-window overflow.
+ */
+const RESERVED_OUTPUT_TOKENS = 16_384;
+const FALLBACK_CONTEXT_TOKENS = 131_072;
+/** Trailing messages preserved verbatim across a compaction (default). */
+const DEFAULT_COMPACTION_RECENT = 12;
 /** Pay for a model-generated compaction summary at most once every N turns. */
 const MIN_TURNS_BETWEEN_SUMMARIES = 3;
 const COMPACTION_NOTICE =
@@ -86,9 +108,14 @@ export class ConversationRuntime {
   private readonly sessionStore: SessionStore;
   private readonly permissionEnforcer: PermissionEnforcer;
   private readonly promptBuilder: SystemPromptBuilder;
-  private readonly maxTranscriptTokens: number;
+  /** Explicit transcript-budget override; when unset the budget is derived per-run from the model's context window. */
+  private readonly maxTranscriptTokensOverride?: number;
+  private readonly compactionRecentLimit: number;
   private readonly gitContextProvider: (cwd: string) => Promise<string | undefined>;
   private readonly hookRunner: HookRunner;
+  private readonly createInteractionHandler: () => InteractionHandler | undefined;
+  /** One plan-mode flag shared across the whole conversation. */
+  private readonly planMode: PlanModeState = { active: false };
   private lastSummaryTurn = Number.NEGATIVE_INFINITY;
 
   constructor(options: ConversationRuntimeOptions) {
@@ -97,9 +124,11 @@ export class ConversationRuntime {
     this.sessionStore = options.sessionStore;
     this.permissionEnforcer = options.permissionEnforcer;
     this.promptBuilder = options.promptBuilder;
-    this.maxTranscriptTokens = options.maxTranscriptTokens ?? DEFAULT_MAX_TRANSCRIPT_TOKENS;
+    this.maxTranscriptTokensOverride = options.maxTranscriptTokens;
+    this.compactionRecentLimit = options.compactionRecentMessages ?? DEFAULT_COMPACTION_RECENT;
     this.gitContextProvider = options.gitContextProvider ?? ((cwd) => detectAndRenderGitContext(cwd));
     this.hookRunner = options.hookRunner ?? new HookRunner({});
+    this.createInteractionHandler = options.createInteractionHandler ?? (() => undefined);
   }
 
   async runTurn(input: RunTurnInput): Promise<TurnSummary> {
@@ -143,22 +172,60 @@ export class ConversationRuntime {
             goalMessage,
           ];
 
+    // Tool definitions are identical every turn; compute once and count their
+    // tokens so the compaction budget reflects the *whole* request payload
+    // (system + tools + messages), not just the message transcript.
+    const tools = this.toolRegistry.definitions({ maxPermission: sandbox });
+    const toolsTokens = estimateTokens(JSON.stringify(tools));
+    const transcriptBudget = this.resolveTranscriptBudget(model);
+    const contextWindow = modelTokenLimit(model)?.contextWindowTokens ?? FALLBACK_CONTEXT_TOKENS;
+    const outputCeiling = maxTokensForModel(model);
+
     try {
       for (let turn = 1; turn <= maxTurns; turn += 1) {
-        await this.compactIfNeeded(messages, transcript, turn, model);
+        await this.compactIfNeeded(messages, transcript, turn, model, transcriptBudget, toolsTokens);
 
-        const response = await this.requestCompletion(
-          {
-            model,
-            messages,
-            tools: this.toolRegistry.definitions({ maxPermission: sandbox }),
-            toolChoice: "auto",
-            reasoningEffort,
-            temperature: 0.2,
-          },
-          input.stream === true,
-          input.onDelta,
-        );
+        // Cap completion tokens at what the window can still hold (input + output
+        // must fit in one shared window), bounded by the model's output ceiling.
+        // This *prevents* an input+output overflow rather than only recovering
+        // from one, and never requests more than the remaining space allows.
+        const inputTokens = estimateMessagesTokens(messages) + toolsTokens;
+        const maxTokens = Math.max(256, Math.min(outputCeiling, contextWindow - inputTokens - 512));
+
+        const requestParams: ChatRunOptions = {
+          model,
+          messages,
+          tools,
+          toolChoice: "auto",
+          reasoningEffort,
+          temperature: 0.2,
+          maxTokens,
+        };
+
+        let response: ChatResponse;
+        try {
+          response = await this.requestCompletion(requestParams, input.stream === true, input.onDelta);
+        } catch (error) {
+          // A context-window overflow slipped past the budget estimate. Force one
+          // out-of-band compaction (budget 0) and retry the turn before failing.
+          if (classifyApiError(error).kind !== "context-window") {
+            throw error;
+          }
+          // Measure shed in TOKENS, not message count: compaction replaces the
+          // dropped middle with a single summary message, so dropping one huge
+          // message leaves the count unchanged while the token size collapses.
+          const beforeTokens = estimateMessagesTokens(messages);
+          await this.compactIfNeeded(messages, transcript, turn, model, 0, toolsTokens);
+          if (estimateMessagesTokens(messages) >= beforeTokens) {
+            throw error; // compaction shed nothing — surface the original error
+          }
+          // Recompute the output budget against the now-smaller transcript.
+          requestParams.maxTokens = Math.max(
+            256,
+            Math.min(outputCeiling, contextWindow - (estimateMessagesTokens(messages) + toolsTokens) - 512),
+          );
+          response = await this.requestCompletion(requestParams, input.stream === true, input.onDelta);
+        }
         sessionUsage = addUsage(sessionUsage, normalizeUsage(response.usage));
 
         const message = response.choices[0]?.message;
@@ -259,6 +326,8 @@ export class ConversationRuntime {
       sandbox,
       maxPermission: sandbox,
       permissionEnforcer,
+      interaction: this.createInteractionHandler(),
+      planMode: this.planMode,
     });
   }
 
@@ -285,30 +354,60 @@ export class ConversationRuntime {
     return this.apiClient.chat(params);
   }
 
+  /**
+   * Transcript token budget for `model`: the explicit override if one was given,
+   * otherwise the model's real context window minus a reserve for the reply.
+   * Falling back to solar-pro3's measured 131,072-token window for unknown models.
+   */
+  private resolveTranscriptBudget(model: string): number {
+    if (this.maxTranscriptTokensOverride !== undefined) {
+      return this.maxTranscriptTokensOverride;
+    }
+    const contextWindow = modelTokenLimit(model)?.contextWindowTokens ?? FALLBACK_CONTEXT_TOKENS;
+    return Math.max(1024, contextWindow - RESERVED_OUTPUT_TOKENS);
+  }
+
   private async compactIfNeeded(
     messages: ChatMessage[],
     transcript: string[],
     turn: number,
     model: string,
+    budget: number,
+    toolsTokens: number,
   ): Promise<void> {
-    if (estimateTranscriptTokens(transcript) <= this.maxTranscriptTokens) {
+    // Gate on the real request payload (messages + tool schemas), not the
+    // side-channel transcript, which omitted tool-call argument bodies.
+    if (estimateMessagesTokens(messages) + toolsTokens <= budget) {
       return;
     }
 
     const head = messages.slice(0, 2);
-    const recent = safeRecentMessages(messages.slice(2), 12);
+    const recent = safeRecentMessages(messages.slice(2), this.compactionRecentLimit);
     const dropped = messages.slice(head.length, messages.length - recent.length);
 
-    // Replace the dropped middle with a model-generated summary, but pay for
-    // that model call at most once every MIN_TURNS_BETWEEN_SUMMARIES turns;
-    // otherwise (or on failure) fall back to a plain notice. This bounds cost
-    // and never blocks the loop on a summarization failure.
+    // Nothing droppable (e.g. only head + recent fit): compacting would just
+    // inject a spurious notice, so leave the conversation untouched.
+    if (dropped.length === 0) {
+      return;
+    }
+
+    const droppedText = dropped.map(renderForSummary).join("\n");
+
+    // Prefer a model-generated summary, paid for at most once every
+    // MIN_TURNS_BETWEEN_SUMMARIES turns. Off-cadence we skip the model call but
+    // still preserve the dropped segment with a cheap extractive compression
+    // rather than a bare notice; the notice is only the last resort.
     let summaryContent = COMPACTION_NOTICE;
-    if (dropped.length > 0 && turn - this.lastSummaryTurn >= MIN_TURNS_BETWEEN_SUMMARIES) {
-      const summary = await this.summarizeDropped(dropped, model);
+    if (turn - this.lastSummaryTurn >= MIN_TURNS_BETWEEN_SUMMARIES) {
+      const summary = await this.summarizeDropped(droppedText, model);
       if (summary) {
         summaryContent = formatCompactSummary(summary);
         this.lastSummaryTurn = turn;
+      }
+    } else {
+      const compressed = compressSummary(droppedText).text;
+      if (compressed.length > 0) {
+        summaryContent = compressed;
       }
     }
 
@@ -317,12 +416,9 @@ export class ConversationRuntime {
     transcript.splice(0, Math.max(0, transcript.length - 24));
   }
 
-  private async summarizeDropped(dropped: ChatMessage[], model: string): Promise<string | undefined> {
+  private async summarizeDropped(droppedText: string, model: string): Promise<string | undefined> {
     try {
-      const segment = dropped
-        .map((message) => `${message.role}: ${message.content ?? ""}`)
-        .join("\n")
-        .slice(0, 8000);
+      const segment = droppedText.slice(0, 24_000);
       const response = await this.apiClient.chat({
         model,
         messages: [
@@ -352,18 +448,40 @@ export function createDefaultSessionStore(): SessionStore {
   };
 }
 
-function safeRecentMessages(messages: ChatMessage[], limit: number): ChatMessage[] {
-  const recent: ChatMessage[] = [];
-
-  for (let index = messages.length - 1; index >= 0 && recent.length < limit; index -= 1) {
-    const message = messages[index];
-
-    if (message.role === "tool" || (message.role === "assistant" && message.tool_calls?.length)) {
-      break;
-    }
-
-    recent.unshift(message);
+/**
+ * Returns the trailing slice of `messages` (up to `limit` messages), adjusted so
+ * it begins at a valid boundary — never on an orphaned `tool` result whose
+ * originating assistant `tool_call` was dropped. The previous implementation
+ * stopped at the first tool boundary scanning backwards, so a transcript that
+ * ended on a tool result (the common case in an agent loop) preserved *nothing*
+ * and compaction threw away the most recent work. Keeping whole
+ * assistant(tool_calls) → tool(result) groups fixes that.
+ */
+export function safeRecentMessages(messages: ChatMessage[], limit: number): ChatMessage[] {
+  if (limit <= 0 || messages.length === 0) {
+    return [];
   }
 
-  return recent;
+  let start = Math.max(0, messages.length - limit);
+  // A leading `tool` message would reference a tool_call that is no longer in
+  // the slice; skip forward until the slice starts on a self-contained message.
+  while (start < messages.length && messages[start].role === "tool") {
+    start += 1;
+  }
+
+  return messages.slice(start);
+}
+
+/**
+ * Renders a dropped message for summarization input: its text plus a compact note
+ * of any tool calls (name + truncated arguments) so the summarizer sees what was
+ * done, without inlining whole file bodies.
+ */
+function renderForSummary(message: ChatMessage): string {
+  const lines = [`${message.role}: ${message.content ?? ""}`];
+  for (const call of message.tool_calls ?? []) {
+    const args = (call.function?.arguments ?? "").slice(0, 200);
+    lines.push(`  ↳ called ${call.function?.name ?? "tool"}(${args})`);
+  }
+  return lines.join("\n");
 }

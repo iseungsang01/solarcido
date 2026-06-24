@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ConversationRuntime } from "../dist/runtime/conversation.js";
+import { ConversationRuntime, safeRecentMessages } from "../dist/runtime/conversation.js";
 import { HookRunner } from "../dist/runtime/hooks.js";
 import { PermissionEnforcer } from "../dist/runtime/permission-enforcer.js";
 import { SystemPromptBuilder } from "../dist/runtime/prompt.js";
@@ -357,7 +357,7 @@ test("ConversationRuntime compacts with an async model summary (structural)", as
     },
   };
 
-  const summary = await createRuntime(client, { maxTranscriptTokens: 1 }).runTurn({
+  const summary = await createRuntime(client, { maxTranscriptTokens: 1, compactionRecentMessages: 0 }).runTurn({
     goal: "inspect files",
     cwd: process.cwd(),
     approvalPolicy: "never",
@@ -395,7 +395,7 @@ test("ConversationRuntime compaction falls back to a notice when summarization f
     },
   };
 
-  const summary = await createRuntime(client, { maxTranscriptTokens: 1 }).runTurn({
+  const summary = await createRuntime(client, { maxTranscriptTokens: 1, compactionRecentMessages: 0 }).runTurn({
     goal: "inspect files",
     cwd: process.cwd(),
     approvalPolicy: "never",
@@ -403,6 +403,66 @@ test("ConversationRuntime compaction falls back to a notice when summarization f
   });
 
   assert.equal(summary.finish.summary, "ok");
+});
+
+test("safeRecentMessages preserves whole tool groups and trims leading orphans", () => {
+  const a = (id) => ({ role: "assistant", content: "", tool_calls: [toolCall("read_file", { path: `${id}.txt` }, id)] });
+  const t = (id) => ({ role: "tool", tool_call_id: id, content: "ok" });
+  const msgs = [a("1"), t("1"), a("2"), t("2"), a("3"), t("3")];
+
+  // limit 3 lands on t("2") (an orphan once its assistant is dropped) → skip to a("3").
+  const recent = safeRecentMessages(msgs, 3);
+  assert.notEqual(recent[0].role, "tool");
+  assert.equal(recent[0].tool_calls?.[0]?.id, "3");
+  assert.equal(recent.at(-1).role, "tool");
+
+  // A transcript ending on a tool result must NOT collapse to empty (the old bug).
+  assert.ok(safeRecentMessages(msgs, 12).length > 0);
+  // limit 0 keeps nothing (maximum-compression config).
+  assert.deepEqual(safeRecentMessages(msgs, 0), []);
+});
+
+test("ConversationRuntime recovers from a context-window overflow by compacting and retrying", async () => {
+  let attempts = 0;
+  const client = {
+    async chat(options) {
+      if (options.messages[0]?.content?.includes("Summarize the following conversation segment")) {
+        return { choices: [{ message: { role: "assistant", content: "- earlier work" } }] };
+      }
+      attempts += 1;
+      if (attempts === 1) {
+        const err = new Error("This model's maximum context length is 131072 tokens");
+        err.status = 400;
+        throw err;
+      }
+      // After the forced compaction + retry, finish.
+      return {
+        choices: [{
+          message: { role: "assistant", content: "", tool_calls: [toolCall("finish", { summary: "recovered", changed_files: [], next_steps: [] })] },
+        }],
+      };
+    },
+  };
+
+  // A SINGLE huge droppable message: forced compaction replaces it with one
+  // summary, so the message COUNT is unchanged (4 → 4) while the token size
+  // collapses. The recovery guard must detect shed in tokens, not message count.
+  const resumeMessages = [
+    { role: "system", content: "sys" },
+    { role: "user", content: "old goal" },
+    { role: "user", content: "REFERENCE: " + "x".repeat(20000) },
+  ];
+
+  const summary = await createRuntime(client, { compactionRecentMessages: 1 }).runTurn({
+    goal: "explain the repository",
+    cwd: process.cwd(),
+    approvalPolicy: "never",
+    sandbox: "workspace-write",
+    resumeMessages,
+  });
+
+  assert.equal(attempts, 2);
+  assert.equal(summary.finish.summary, "recovered");
 });
 
 test("ConversationRuntime enforces max turn guard", async () => {

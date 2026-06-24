@@ -1,6 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
+import {
+  clampText,
+  MAX_READ_OUTPUT_CHARS,
+  MAX_SEARCH_OUTPUT_CHARS,
+} from "./output-limits.js";
 import { extractTextFromBytes, isPdfPath } from "./pdf-extract.js";
 
 type ToolResult = {
@@ -139,7 +144,10 @@ export async function readFile(root: string, targetPath: string, offset?: number
     }
     const bytes = await fs.readFile(resolved);
     const text = extractTextFromBytes(bytes);
-    return { ok: true, output: text || "<no extractable text in PDF>" };
+    return {
+      ok: true,
+      output: clampText(text || "<no extractable text in PDF>", MAX_READ_OUTPUT_CHARS),
+    };
   }
 
   const stat = await fs.stat(resolved);
@@ -149,10 +157,11 @@ export async function readFile(root: string, targetPath: string, offset?: number
   }
 
   const content = await fs.readFile(resolved, "utf8");
+  const rendered = offset !== undefined || limit !== undefined ? withLineNumbers(content, offset, limit) : content;
 
   return {
     ok: true,
-    output: offset !== undefined || limit !== undefined ? withLineNumbers(content, offset, limit) : content,
+    output: clampText(rendered, MAX_READ_OUTPUT_CHARS, "head", "read again with offset/limit to see more"),
   };
 }
 
@@ -245,6 +254,6 @@ export async function searchFiles(
 
   return {
     ok: true,
-    output: rows.join("\n") || "<no matches>",
+    output: clampText(rows.join("\n") || "<no matches>", MAX_SEARCH_OUTPUT_CHARS, "head", "narrow the pattern or path"),
   };
 }

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   LspClientSession,
   LspClientError,
+  createLspStdioTransportFactory,
   uriToPath,
 } from "../dist/runtime/lsp/client.js";
 
@@ -347,4 +348,16 @@ test("uriToPath maps file:// URIs (incl. Windows drive + percent-encoding) and p
   assert.equal(uriToPath("file:///C:/Users/x/a.ts"), "C:/Users/x/a.ts");
   assert.equal(uriToPath("file:///path/with%20space.ts"), "/path/with space.ts");
   assert.equal(uriToPath("/already/a/path.ts"), "/already/a/path.ts");
+});
+
+// ---------------------------------------------------------------------------
+// Live stdio transport — missing server binary must not crash the process
+// ---------------------------------------------------------------------------
+
+test("a missing server binary rejects instead of crashing the process", async () => {
+  const factory = createLspStdioTransportFactory();
+  const transport = factory({ kind: "stdio", command: "solarcido-no-such-lsp-server-xyz", args: [] });
+  const session = new LspClientSession(transport, { requestTimeoutMs: 2000 });
+  await assert.rejects(() => session.initialize("file:///tmp"));
+  await session.shutdown();
 });

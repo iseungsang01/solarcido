@@ -114,7 +114,10 @@ const ALIAS_MAP = new Map<string, { meta: ProviderMetadata; canonical: string }>
 // ---------------------------------------------------------------------------
 
 const TOKEN_LIMITS: ReadonlyArray<[model: string, limit: ModelTokenLimit]> = [
-  ["solar-pro3-260323", { maxOutputTokens: 4_096, contextWindowTokens: 131_072 }],
+  // maxOutputTokens measured against the live API: max_tokens > 4096 is honored
+  // exactly and uncapped output runs far past it, so 4096 understated the real
+  // ceiling; 16_384 matches the runtime's reserved output budget.
+  ["solar-pro3-260323", { maxOutputTokens: 16_384, contextWindowTokens: 131_072 }],
   ["grok-3", { maxOutputTokens: 64_000, contextWindowTokens: 131_072 }],
   ["grok-3-mini", { maxOutputTokens: 64_000, contextWindowTokens: 131_072 }],
   ["kimi-k2.5", { maxOutputTokens: 16_384, contextWindowTokens: 256_000 }],

@@ -51,6 +51,8 @@ export type ChatRunOptions = {
   reasoningEffort?: ReasoningEffort;
   temperature?: number;
   model?: string;
+  /** Upper bound on completion tokens for this request; omitted when undefined. */
+  maxTokens?: number;
 };
 
 export type ChatStreamEvent =

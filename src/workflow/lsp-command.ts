@@ -4,7 +4,7 @@
  * injectable session so it is testable without spawning a real server; the CLI
  * entry (`runLspDiagnosticsCommand`) wires it to a real stdio language server.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { LspClientSession, createLspStdioTransportFactory } from "../runtime/lsp/client.js";
@@ -12,6 +12,10 @@ import type { LspDiagnostic } from "../runtime/lsp-client.js";
 
 export type LspServerCommand = { command: string; args?: string[] };
 
+// NOTE: SERVERS (ext -> spawn command) and LANGUAGE_IDS (ext -> LSP languageId)
+// are intentionally separate from EXT_TO_LANGUAGE in ../runtime/lsp-client.ts:
+// the LSP languageId (".tsx" -> "typescriptreact") and the server command are
+// distinct concerns from that module's generic language name. Do not merge.
 const SERVERS: Readonly<Record<string, LspServerCommand>> = {
   ".ts": { command: "typescript-language-server", args: ["--stdio"] },
   ".tsx": { command: "typescript-language-server", args: ["--stdio"] },
@@ -53,6 +57,33 @@ export function pathToFileUri(filePath: string): string {
   return `file://${encoded}`;
 }
 
+const PROJECT_ROOT_MARKERS: readonly string[] = [
+  "tsconfig.json",
+  "jsconfig.json",
+  "package.json",
+  "go.mod",
+  "Cargo.toml",
+  "pyproject.toml",
+  "setup.py",
+  "setup.cfg",
+  ".git",
+];
+
+/** Walk up from a file's directory to the nearest project-root marker, falling
+ * back to the file's own directory when no marker is found. */
+export function findProjectRoot(absFile: string): string {
+  const startDir = path.dirname(path.resolve(absFile));
+  let dir = startDir;
+  for (;;) {
+    if (PROJECT_ROOT_MARKERS.some((marker) => existsSync(path.join(dir, marker)))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return startDir;
+    dir = parent;
+  }
+}
+
 /** Minimal session surface used by the diagnostics driver (matches LspClientSession). */
 export type LspSessionLike = {
   initialize(rootUri: string): Promise<void>;
@@ -64,7 +95,8 @@ export type LspSessionLike = {
 export type CollectDiagnosticsOptions = {
   languageId?: string;
   rootUri?: string;
-  /** How long to wait for the server to push diagnostics (default 0 here; the CLI uses ~1500ms). */
+  /** Max time to wait for the server to push diagnostics; returns early once any
+   * arrive (default 0 here; the CLI uses ~3000ms). */
   settleMs?: number;
 };
 
@@ -81,14 +113,30 @@ export async function collectDiagnostics(
   const rootUri = options.rootUri ?? pathToFileUri(path.dirname(path.resolve(filePath)));
   const languageId = options.languageId ?? languageIdForFile(filePath);
 
-  await session.initialize(rootUri);
-  await session.didOpen(uri, languageId, text);
-  if (options.settleMs && options.settleMs > 0) {
-    await delay(options.settleMs);
+  try {
+    await session.initialize(rootUri);
+    await session.didOpen(uri, languageId, text);
+    // Wait for the server to push diagnostics, but return as soon as any
+    // arrive so the common "show me my errors" case isn't penalized by the
+    // full settle window. A clean file legitimately yields none, so we still
+    // wait out the deadline before concluding it is diagnostic-free.
+    const deadlineMs = options.settleMs && options.settleMs > 0 ? options.settleMs : 0;
+    let diagnostics = session.diagnostics(uri);
+    if (deadlineMs > 0 && diagnostics.length === 0) {
+      const start = Date.now();
+      const step = Math.min(100, deadlineMs);
+      while (diagnostics.length === 0 && Date.now() - start < deadlineMs) {
+        await delay(step);
+        diagnostics = session.diagnostics(uri);
+      }
+    }
+    return diagnostics;
+  } finally {
+    // Always tear the session down — even if initialize/didOpen threw — so the
+    // spawned server is killed and the CLI can exit. Best-effort: a teardown
+    // failure must not mask the original error.
+    await session.shutdown().catch(() => {});
   }
-  const diagnostics = session.diagnostics(uri);
-  await session.shutdown();
-  return diagnostics;
 }
 
 export function formatDiagnostics(file: string, diagnostics: LspDiagnostic[]): string {
@@ -134,6 +182,9 @@ export async function runLspDiagnosticsCommand(options: RunLspDiagnosticsCommand
     cwd: path.dirname(absFile),
   });
   const session = new LspClientSession(transport);
-  const diagnostics = await collectDiagnostics(session, absFile, text, { settleMs: options.settleMs ?? 1500 });
+  const diagnostics = await collectDiagnostics(session, absFile, text, {
+    settleMs: options.settleMs ?? 3000,
+    rootUri: pathToFileUri(findProjectRoot(absFile)),
+  });
   return formatDiagnostics(absFile, diagnostics);
 }

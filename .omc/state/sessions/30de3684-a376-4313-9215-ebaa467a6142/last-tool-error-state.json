@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cd \\\"C:/Users/lss/Documents/GitHub/solarcido\\\" && ls -la .omc/ 2>/dev/null; echo \\\"---HOOKS---\\\"; ls -la .claude/ 2>/dev/null\",\"description\":\"List .omc and .claude directory contents\"}",
+  "error": "Exit code 2\ntotal 40\ndrwxr-xr-x 1 lss 197121     0 Jun 24 01:41 .\ndrwxr-xr-x 1 lss 197121     0 Jun 24 01:29 ..\n-rw-r--r-- 1 lss 197121 17615 Jun 24 01:41 project-memory.json\ndrwxr-xr-x 1 lss 197121     0 Jun 24 00:25 sessions\ndrwxr-xr-x 1 lss 197121     0 Jun 24 01:43 state\n---HOOKS---",
+  "timestamp": "2026-06-23T16:43:40.320Z",
+  "retry_count": 1
+}

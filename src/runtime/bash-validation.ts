@@ -39,7 +39,11 @@ const DESTRUCTIVE_PATTERNS: ReadonlyArray<[string, string]> = [
   ["rm -rf ~",  "Recursive forced deletion of home directory"],
   ["rm -rf *",  "Recursive forced deletion of all files in current directory"],
   ["rm -rf .",  "Recursive forced deletion of current directory"],
+  ["mkfs",      "Filesystem creation will destroy existing data on the device"],
+  ["dd if=",    "Direct disk write — can overwrite partitions or devices"],
   ["> /dev/sd", "Writing to raw disk device"],
+  ["chmod -R 777", "Recursively setting world-writable permissions"],
+  ["chmod -R 000", "Recursively removing all permissions"],
   [":(){ :|:& };:", "Fork bomb — will crash the system"],
 ];
 
