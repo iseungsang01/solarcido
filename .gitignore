@@ -7,3 +7,6 @@ target/
 Cargo.lock
 
 .solarcido
+
+# oh-my-claudecode runtime state (local only)
+.omc/
